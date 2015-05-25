@@ -1,47 +1,61 @@
 open Core.Std
 
-type color =
-    White 
+module Color : sig
+  type t =
+  | White
   | Blue
   | Yellow
   | Red
   | Green
+end
 
-type card = {
-  color : color
-; number : int
-}
+module Card : sig
+  type t =
+    { color : Color.t
+    ; number : int
+    }
+end
 
-type player_name = int
+module Player_id : sig
+  type t = int
+end
 
-type state = {
-  hint_token : int
-; bombs : int
-; player_cards : card List.t Int.Map.t
-; top_played_cards : card List.t
-; remaining_cards : card List.t
-} 
+module State : sig
+  type t =
+    { hint_token : int
+    ; bombs : int
+    ; player_cards : Card.t List.t Int.Map.t
+    ; top_played_cards : Card.t List.t
+    ; remaining_cards : Card.t List.t
+    }
+end
 
-type hint =
-    Color of color
+module Hint : sig
+  type t =
+  | Color of Color.t
   | Number of int
+end
 
-type play = 
-    Hint of player_name * hint * (int List.t)
+module Action : sig
+  type t =
+  | Hint of Player_id.t * Hint.t * (int List.t)
   | Discard of int
   | Play of int
   | Bomb of int
+end
 
-val standard_init_state : int -> state
+val standard_init_state : int -> State.t
 
-type player =
-    Player of (state -> play Int.Map.t -> (player * play))
+module Player : sig
+  type t =
+  | Player of (State.t -> Action.t Int.Map.t -> (t * Action.t))
+end
 
 val hanabi :
-  state
-  -> player_name
-  -> (player Int.Map.t)
+  State.t
+  -> Player_id.t
+  -> Player.t Int.Map.t
   -> bool
 
 val test_bot :
-  int -> int -> player -> int
+  int -> int -> Player.t -> int
