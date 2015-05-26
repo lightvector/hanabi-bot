@@ -1,60 +1,79 @@
 open Core.Std
+open Hanabi_types
 
-module Color = struct
+module Annotated_card = struct
   type t =
-  | White
-  | Blue
-  | Yellow
-  | Red
-  | Green
-  with sexp
-
-  let all = [ White; Blue; Yellow; Red; Green ]
-
-  let to_string t =
-    match t with
-    | White -> "W"
-    | Blue -> "B"
-    | Yellow -> "Y"
-    | Red -> "R"
-    | Green -> "G"
+    { id: Card_id.t
+    ; card: Card.t option
+    ; annot: Univ.t
+    }
 end
 
-module Number = struct
-  type t = int
-  with sexp
-
-  let all = [ 1; 2; 3; 4; 5 ]
-  let to_string = Int.to_string
+module Annotated_action = struct
+  type t =
+    { action: Action.t
+    ; annot: Univ.t
+    }
 end
 
-module Card = struct
+module GameParams = struct
   type t =
-    { color : Color.t
-    ; number : Number.t
+    { deck: Card.t list
+    ; target_numbers: Number.t Color.Map.t
+    ; initial_hints: int
+    ; max_hints: int
+    ; bombs_before_loss: int
+    ; rainbow_colors: Color.t list
+    ; rainbow_numbers: Number.t list
     }
   with sexp
-
-  let to_string t =
-    Color.to_string t.color ^ Number.to_string t.number
 end
 
-module Hint = struct
+module State = struct
   type t =
-  | Color of Color.t
-  | Number of Number.t
-  with sexp
+    { deck: Annotated_card.t list
+    ; bombs_left: int
+    ; hints_left: int
+    ; final_turns_left: int
+    ; played_cards: Annotated_card.t list Color.Map.t
+    ; discarded_cards: Annotated_card.t list
+    ; current_player: Player_id.t
+    ; hands: Annotated_card.t list Player_id.Map.t
+    ; history: Annotated_action.t list
+    }
+
+  let next_player t =
+    (Player_id.to_int t.current_player + 1) mod Map.length t.hands
+    |> Player_id.of_int
+
+  let is_legal_exn t action =
+    (* CR dwu: TODO *)
+    assert false
+
+  let legal_hints t =
+    (* CR dwu: TODO *)
+    assert false
+
+  let act t action =
+    (* CR dwu: TODO *)
+    assert false
+
+  let act_exn t action =
+    (* CR dwu: TODO *)
+    assert false
+
+  let specialize t player =
+    (* CR dwu: TODO *)
+    assert false
+
+  let map_annots t ~cards ~actions =
+    (* CR dwu: TODO *)
+    assert false
 end
 
-module Player_id = struct
-  type t = int
-  with sexp
-end
 
-module Action = struct
-  type t =
-  | Hint of Player_id.t * Hint.t * (int List.t)
-  | Discard of int
-  | Play of int
-  with sexp
+module type Player = sig
+  type t
+  val update: t -> Action.t -> unit
+  val act: t -> State.t -> Action.t
 end

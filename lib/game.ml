@@ -23,7 +23,7 @@ let shuffle l =
 
 
 let standard_deck =
-  List.concat_map Color.all ~f:(fun color ->
+  List.concat_map Color.default_5 ~f:(fun color ->
     List.map Number.all ~f:(fun number ->
       {Card.color; number}
     )
@@ -102,13 +102,13 @@ let remove_card state player i =
 
 let do_play played_cards card = (* return [] if bomb *)
   match List.partition_tf played_cards ~f:(fun c -> c.Card.color = card.Card.color) with
-  | [], q -> if card.Card.number = 1 then card :: q else []
-  | [c], q ->  if card.Card.number = c.Card.number+1 then card :: q else []
+  | [], q -> if card.Card.number = Number.first then card :: q else []
+  | [c], q ->  if card.Card.number = Number.next c.Card.number then card :: q else []
   | _, _ -> failwith "multiple card with the same color"
 
 let test_victory played_cards =
   List.length played_cards = 5
-  && List.for_all played_cards ~f:(fun c -> c.Card.number = 5)
+  && List.for_all played_cards ~f:(fun c -> Number.to_int c.Card.number = 5)
 
 let hanabi
     state
