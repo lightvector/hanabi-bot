@@ -3,27 +3,45 @@ open Hanabi_types
 
 (* A card that may or may not be visible, with an arbitrary annotation on it to record
    information about that card. *)
-module Annotated_card : sig
-  type t =
+module Card_info : sig
+  type 'annot t =
     { id: Card_id.t
+(* Some implies the card is visible *)
     ; card: Card.t option
-    ; annot: Univ.t
+    ; annot: 'annot
     }
 end
 
-(* An action with an arbitrary annotation on it to record information about that action *)
-module Annotated_action : sig
+module Turn : sig
+  type event =
+    | Hint of Hint.t
+    | Discard of int * Card_id.t * Card.t
+    | Play of int * Card_id.t * Card.t
+    | Draw of Card_id.t * Card.t option
+
   type t =
-    { action: Action.t
-    ; annot: Univ.t
-    }
+      { who : Player_id.t
+      ; events : event list
+      }
+end
+
+module Deck_params : sig
+  type t =
+    | Symmetric of int Number.Map.t * Color.t list
+    | Explicit  of Card.t list
+
+  val standard: t
+
+  val to_deck: t -> Card.t list
+
 end
 
 (* Represents the parameters for a given game.
    Some of these fields are redundant, but convenient *)
-module GameParams : sig
+module Game_params : sig
   type t =
-    { deck: Card.t list
+    (* we could remove this and use number_distribution below if we want all colors to have the same distribution *)
+    { deck_params: Deck_params.t
     (* The highest card in each color *)
     ; target_numbers: Number.t Color.Map.t
     ; initial_hints: int
@@ -33,6 +51,8 @@ module GameParams : sig
     ; rainbow_colors: Color.t list
     (* Numbers that must be hinted as every number *)
     ; rainbow_numbers: Number.t list
+    ; players: int
+    ; hand_size: int
     }
   with sexp
 end
@@ -41,22 +61,28 @@ end
    Capable of representing game states that are globally known, as well as game states
    as seen by one player (or seen by one player as envisioned by another), based on
    whether the [card] field in the various [Annotated_card.t] are Some or None. *)
+(* CR stabony: should this contain Game_params.t? *)
 module State : sig
-  type t =
-    { deck: Annotated_card.t list
+  type 'annot t =
+    { deck: Card_id.t list
     ; bombs_left: int
     ; hints_left: int
     (* The number of turns left in the game when the deck is empty *)
     ; final_turns_left: int
-    ; played_cards: Annotated_card.t list Color.Map.t
-    ; discarded_cards: Annotated_card.t list
-    ; current_player: Player_id.t
-    ; hands: Annotated_card.t list Player_id.Map.t
-    ; history: Annotated_action.t list
+    ; played_cards: Card_id.t list Color.Map.t
+    ; discarded_cards: Card_id.t list
+    ; hands: Card_id.t list Player_id.Map.t
+    ; card_infos: 'annot Card_info.t Card_id.Map.t
+    ; history: Turn.t list
     }
 
+  val create : Game_params.t -> t
+
+  val update : t -> Turn.t -> t
+
+  val eval_action_exn : t -> Action.t -> t * Turn.t
   (* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
-  val is_legal_exn: t -> Action.t -> bool
+  val is_definitely_legal_exn: t -> Action.t -> bool
 
   (* Return all definitely-legal hints *)
   val legal_hints: t -> Hint.t list
@@ -71,7 +97,6 @@ module State : sig
   val map_annots: t -> cards:(Univ.t -> Univ.t) -> actions:(Univ.t -> Univ.t) -> t
 
 end
-
 
 module type Player = sig
   type t
