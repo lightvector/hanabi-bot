@@ -73,7 +73,7 @@ module State : sig
     ; discarded_cards: Card_id.t list
     ; hands: Card_id.t list Player_id.Map.t
     ; card_infos: 'annot Card_info.t Card_id.Map.t
-    ; history: Turn.t list
+    ; rev_history: Turn.t list
     }
 
   val create : Game_params.t -> t
