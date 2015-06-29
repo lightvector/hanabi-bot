@@ -18,8 +18,9 @@ module Color : sig
 end
 
 module Number : sig
-  type t
-  with sexp
+  type t = int
+  with sexp, compare
+  include Comparable.S with type t := t
 
   val to_int: t -> int
   val of_int: int -> t
@@ -82,4 +83,3 @@ module Action : sig
   | Play of int
   with sexp
 end
-

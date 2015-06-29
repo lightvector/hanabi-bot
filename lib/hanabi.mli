@@ -51,7 +51,7 @@ module Game_params : sig
     ; rainbow_colors: Color.t list
     (* Numbers that must be hinted as every number *)
     ; rainbow_numbers: Number.t list
-    ; players: int
+    ; player_count: int
     ; hand_size: int
     }
   with sexp
@@ -64,7 +64,8 @@ end
 (* CR stabony: should this contain Game_params.t? *)
 module State : sig
   type 'annot t =
-    { deck: Card_id.t list
+    { game_params: Game_params.t
+    ; deck: Card_id.t list
     ; bombs_left: int
     ; hints_left: int
     (* The number of turns left in the game when the deck is empty *)
@@ -76,30 +77,30 @@ module State : sig
     ; rev_history: Turn.t list
     }
 
-  val create : Game_params.t -> t
+  val create : Game_params.t -> unit t
 
-  val update : t -> Turn.t -> t
+  val eval_turn_exn : 'a t -> Turn.t -> 'a t
 
-  val eval_action_exn : t -> Action.t -> t * Turn.t
+  val eval_action_exn : 'a t -> Action.t -> 'a t * Turn.t
   (* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
-  val is_definitely_legal_exn: t -> Action.t -> bool
-
-  (* Return all definitely-legal hints *)
-  val legal_hints: t -> Hint.t list
-
-  (* Perform an action *)
-  val act: t -> Action.t -> t Or_error.t
-  val act_exn: t -> Action.t -> t
-
-  (* Return a [t] where all cards not visible to the specified player are hidden *)
-  val specialize: t -> Player_id.t -> t
-  (* Apply the given map function to all annotations on all cards and actions *)
-  val map_annots: t -> cards:(Univ.t -> Univ.t) -> actions:(Univ.t -> Univ.t) -> t
+  (* val is_definitely_legal_exn: 'a t -> Action.t -> bool
+   *
+   * (\* Return all definitely-legal hints *\)
+   * val legal_hints: 'a t -> Hint.t list
+   *
+   * (\* Perform an action *\)
+   * val act: 'a t -> Action.t -> 'a t Or_error.t
+   * val act_exn: 'a t -> Action.t -> 'a t
+   *
+   * (\* Return a [t] where all cards not visible to the specified player are hidden *\)
+   * val specialize: 'a t -> Player_id.t -> 'a t
+   * (\* Apply the given map function to all annotations on all cards and actions *\)
+   * val map_annots: t -> cards:(Univ.t -> Univ.t) -> actions:(Univ.t -> Univ.t) -> t *)
 
 end
 
-module type Player = sig
-  type t
-  val update: t -> Action.t -> unit
-  val act: t -> State.t -> Action.t
-end
+(* module type Player = sig
+ *   type t
+ *   val update: t -> Action.t -> unit
+ *   val act: t -> State.t -> Action.t
+ * end *)

@@ -28,15 +28,13 @@ module Color = struct
 end
 
 module Number = struct
-  type t = int
-  with sexp
+  include Int
 
   let min_value = 1
   let max_value = 5
   let all = [ 1; 2; 3; 4; 5 ]
   let first = 1
   let next t = t + 1
-
 
   let to_int = Fn.id
   let of_int = Fn.id
