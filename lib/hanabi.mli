@@ -42,8 +42,6 @@ module Game_params : sig
   type t =
     (* we could remove this and use number_distribution below if we want all colors to have the same distribution *)
     { deck_params: Deck_params.t
-    (* The highest card in each color *)
-    ; target_numbers: Number.t Color.Map.t
     ; initial_hints: int
     ; max_hints: int
     ; bombs_before_loss: int

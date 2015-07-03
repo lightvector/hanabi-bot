@@ -59,7 +59,6 @@ end
 module Game_params = struct
   type t =
     { deck_params: Deck_params.t
-    ; target_numbers: Number.t Color.Map.t
     ; initial_hints: int
     ; max_hints: int
     ; bombs_before_loss: int
@@ -69,6 +68,24 @@ module Game_params = struct
     ; hand_size: int
     }
   with sexp
+
+  let standard ~player_count =
+    let hand_size =
+      match player_count with
+      | 2 | 3 -> 5
+      | 4 | 5 -> 4
+      | _ -> failwithf "no standard game params with player_count = %d" player_count ()
+    in
+    { deck_params = Deck_params.standard;
+      initial_hints = 8;
+      max_hints = 8;
+      bombs_before_loss = 3;
+      rainbow_colors = [];
+      rainbow_numbers = [];
+      player_count;
+      hand_size;
+    }
+
 end
 
 module State = struct
@@ -112,15 +129,50 @@ module State = struct
     | Some (last_played :: _) ->
       Number.next (identify_card_exn t last_played).Card.number = number
 
-  let is_legal_hint t hint =
-    (* let { Hint. target; hint; hand_indices } = hint in *)
-    assert false
+  let hint_matches_card hint card =
+    match hint with
+    | Hint.Number n -> Number.(=) card.Card.number n
+    | Hint.Color c -> Color.(=) card.Card.color c
+
+  let is_legal_hint_exn t hint =
+    let { Hint. target; hint; hand_indices } = hint in
+    not (target = next_player t)
+    && t.hints_left > 0
+    && hand_indices <> []
+    && match Map.find t.hands target with
+    | None -> false
+    | Some hand ->
+      let rev_matching_indicies, _ =
+        List.fold hand ~init:([], 0)
+          ~f:(fun (matching_indicies, i) card_id ->
+            let card = identify_card_exn t card_id in
+            if hint_matches_card hint card
+            then (i :: matching_indicies, (i + 1))
+            else matching_indicies, (i + 1))
+      in
+      (List.rev rev_matching_indicies) = hand_indices
 
   let is_definitely_legal_exn t action =
-    assert false
+    match action with
+    | Action.Hint hint -> is_legal_hint_exn t hint
+    | Action.Discard i | Action.Play i ->
+      0 <= i
+      && i < t.game_params.Game_params.hand_size
 
-  let random_permutation l =
-    assert false
+  let rec random_permutation l =
+    Random.self_init ();
+    let l_with_floats =
+      List.map l ~f:(fun a -> a, Random.float 1.)
+    in
+    try
+      List.sort l_with_floats ~cmp:(fun (_,x) (_,y) ->
+        if x > y
+        then 1
+        else if x < y
+        then -1
+        else failwith "picked same floats")
+      |> List.map ~f:fst
+    with _ -> random_permutation l
 
   (* GAMEPLAY *)
 
@@ -186,6 +238,11 @@ module State = struct
         Map.add hands ~key:who
           ~data:(List.filter hand ~f:(fun c -> not (c = card_id)))
       in
+      let add_to_hand hands card_id =
+        let hand = Player_id.Map.find_exn hands who in
+        Map.add hands ~key:who
+          ~data:(card_id :: hand)
+      in
       let played_cards, hands =
         Option.fold play ~init:(t.played_cards, t.hands)
           ~f:(fun (played_cards, hands) play ->
@@ -196,6 +253,10 @@ module State = struct
           ~f:(fun (played_cards, hands) discard ->
             played_cards,
             remove_from_hand hands discard)
+        |> fun init -> Option.fold draw ~init
+          ~f:(fun (played_cards, hands) draw ->
+            played_cards,
+            add_to_hand hands draw)
       in
       { t with deck
         ; bombs_left = t.bombs_left - bombs_used
@@ -207,7 +268,6 @@ module State = struct
           | Some card_id -> card_id :: t.discarded_cards
         end
         ; hands
-        ; rev_history = turn :: t.rev_history
       }
     in
     let final_turns_used =
@@ -218,7 +278,9 @@ module State = struct
     let new_t =
       List.fold turn.Turn.events ~init:t ~f:eval_event_exn
     in
-    { new_t with final_turns_left = new_t.final_turns_left - final_turns_used }
+    { new_t with
+      final_turns_left = new_t.final_turns_left - final_turns_used;
+      rev_history = turn :: t.rev_history }
 
   let eval_action_exn t action =
     let turn = turn_of_action_exn t action in
@@ -289,6 +351,13 @@ module State = struct
     assert false
 end
 
+let () =
+  let state, _ =
+    State.create (Game_params.standard ~player_count:2)
+    |> fun t -> State.eval_action_exn t (Action.Discard 2)
+    |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
+  in
+  printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state))
 
 (* module type Player = sig
  *   type t
