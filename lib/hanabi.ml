@@ -54,6 +54,10 @@ module Deck_params = struct
 	  in
 	  deck := (cards_to_add @ !deck));
       !deck
+
+  let perfect_score t =
+
+
 end
 
 module Game_params = struct
@@ -343,8 +347,34 @@ module State = struct
     assert false
 
   let specialize t player =
-    (* CR dwu: TODO *)
-    assert false
+    let invisible_cards =
+      (Option.value ~default:[] (Map.find t.hands player))
+      @ t.deck
+    in
+    let is_invisible card_id = List.mem invisible_cards card_id in
+    { t with
+      card_infos = Player_id.Map.mapi t.card_infos ~f:(fun card_id card_info ->
+        if is_invisible card_id
+        then { card_info with card = None }
+        else card_info);
+      rev_history = List.map t.rev_history ~f:(fun turn ->
+        { turn with
+          events = List.map turn.events ~f:(fun event ->
+            match event with
+            | Turn.Draw (card_id, _) -> Turn.Draw (card_id, None)
+            | _ -> event)})}
+
+  let score t =
+    if t.bombs_left = 0
+    then 0
+    else
+      List.fold (Color.Map.values t.played_cards) ~init:0
+        ~f:(fun acc plays -> acc + List.length plays)
+
+  let is_game_over t =
+    t.bombs_left = 0
+    || t.final_turns_left = 0
+    || score t = (Game_params.perfect_score t.game_params)
 
   let map_annots t ~cards ~actions =
     (* CR dwu: TODO *)
