@@ -54,10 +54,6 @@ module Deck_params = struct
 	  in
 	  deck := (cards_to_add @ !deck));
       !deck
-
-  let perfect_score t =
-
-
 end
 
 module Game_params = struct
@@ -138,6 +134,16 @@ module State = struct
     | Hint.Number n -> Number.(=) card.Card.number n
     | Hint.Color c -> Color.(=) card.Card.color c
 
+  let matching_indices t hint hand =
+    List.fold hand ~init:([], 0)
+      ~f:(fun (matching_indices, i) card_id ->
+        let card = identify_card_exn t card_id in
+        if hint_matches_card hint card
+        then (i :: matching_indices, (i + 1))
+        else matching_indices, (i + 1))
+    |> fst
+    |> List.rev
+
   let is_legal_hint_exn t hint =
     let { Hint. target; hint; hand_indices } = hint in
     not (target = next_player t)
@@ -146,15 +152,13 @@ module State = struct
     && match Map.find t.hands target with
     | None -> false
     | Some hand ->
-      let rev_matching_indicies, _ =
-        List.fold hand ~init:([], 0)
-          ~f:(fun (matching_indicies, i) card_id ->
-            let card = identify_card_exn t card_id in
-            if hint_matches_card hint card
-            then (i :: matching_indicies, (i + 1))
-            else matching_indicies, (i + 1))
-      in
-      (List.rev rev_matching_indicies) = hand_indices
+      matching_indices t hint hand = hand_indices
+
+  let all_legal_hints t hand =
+    (List.map Color.default_5 ~f:(fun c -> Hint.Color c)
+     @ List.map Number.all ~f:(fun n -> Hint.Number n))
+    |> List.map ~f:(fun hint -> hint, matching_indices t hint hand)
+    |> List.filter ~f:(fun (hint, matches) -> matches <> [])
 
   let is_definitely_legal_exn t action =
     match action with
@@ -330,19 +334,7 @@ module State = struct
     in
     List.fold initial_turns ~init ~f:eval_turn_exn
 
-  let is_legal_exn t action =
-    (* CR dwu: TODO *)
-    assert false
-
   let legal_hints t =
-    (* CR dwu: TODO *)
-    assert false
-
-  let act t action =
-    (* CR dwu: TODO *)
-    assert false
-
-  let act_exn t action =
     (* CR dwu: TODO *)
     assert false
 
@@ -353,13 +345,13 @@ module State = struct
     in
     let is_invisible card_id = List.mem invisible_cards card_id in
     { t with
-      card_infos = Player_id.Map.mapi t.card_infos ~f:(fun card_id card_info ->
+      card_infos = Card_id.Map.mapi t.card_infos ~f:(fun ~key:card_id ~data:card_info ->
         if is_invisible card_id
-        then { card_info with card = None }
+        then { card_info with Card_info. card = None }
         else card_info);
       rev_history = List.map t.rev_history ~f:(fun turn ->
         { turn with
-          events = List.map turn.events ~f:(fun event ->
+          Turn. events = List.map turn.Turn.events ~f:(fun event ->
             match event with
             | Turn.Draw (card_id, _) -> Turn.Draw (card_id, None)
             | _ -> event)})}
@@ -368,13 +360,12 @@ module State = struct
     if t.bombs_left = 0
     then 0
     else
-      List.fold (Color.Map.values t.played_cards) ~init:0
+      List.fold (List.map ~f:snd (Color.Map.to_alist t.played_cards)) ~init:0
         ~f:(fun acc plays -> acc + List.length plays)
 
   let is_game_over t =
     t.bombs_left = 0
     || t.final_turns_left = 0
-    || score t = (Game_params.perfect_score t.game_params)
 
   let map_annots t ~cards ~actions =
     (* CR dwu: TODO *)
@@ -382,10 +373,12 @@ module State = struct
 end
 
 let () =
-  let state, _ =
+  let state =
     State.create (Game_params.standard ~player_count:2)
     |> fun t -> State.eval_action_exn t (Action.Discard 2)
     |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
+    |> fun (t, _) -> State.eval_action_exn t (Action.Hint {Hint.
+    |> fun (t, _) -> State.specialize t (Player_id.of_int 1)
   in
   printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state))
 
