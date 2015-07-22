@@ -97,8 +97,19 @@ module State : sig
 
 end
 
-(* module type Player = sig
- *   type t
- *   val update: t -> Action.t -> unit
- *   val act: t -> State.t -> Action.t
- * end *)
+module Player : sig
+  module Intf : sig
+    type 'a t =
+      { create : (Player_id.t -> 'a)
+      ; act : ('a -> unit State.t -> Action.t)
+      }
+
+    type wrapped = T:'a t -> wrapped
+  end
+
+  type 'a t = Player_id.t * 'a * 'a Intf.t
+
+  type wrapped = T:'a t -> wrapped
+end
+
+val play : Game_params.t -> Player.Intf.wrapped list -> unit State.t

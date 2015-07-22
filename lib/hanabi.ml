@@ -377,10 +377,54 @@ let () =
     State.create (Game_params.standard ~player_count:2)
     |> fun t -> State.eval_action_exn t (Action.Discard 2)
     |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
-    |> fun (t, _) -> State.eval_action_exn t (Action.Hint {Hint.
-    |> fun (t, _) -> State.specialize t (Player_id.of_int 1)
+    |> fun (t, _) ->
+      let target = Player_id.of_int 1 in
+      let hint, hand_indices =
+        List.hd_exn (State.all_legal_hints t (Map.find_exn t.State.hands target))
+      in
+      State.eval_action_exn t (Action.Hint { Hint. target; hint; hand_indices })
+    |> fun (t, _) -> State.specialize t (Player_id.of_int 0)
   in
   printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state))
+
+module Player = struct
+  module Intf = struct
+    type 'a t =
+      { create : (Player_id.t -> 'a)
+      ; act : ('a -> unit State.t -> Action.t)
+      }
+
+    type wrapped = T:'a t -> wrapped
+  end
+
+  type 'a t = Player_id.t * 'a * 'a Intf.t
+
+  type wrapped = T:'a t -> wrapped
+end
+
+let play game_params players =
+  let players =
+    List.mapi players ~f:(fun i (Player.Intf.T intf) ->
+      let player_id = Player_id.of_int i in
+      Player.T (player_id, intf.Player.Intf.create player_id, intf))
+    |> Queue.of_list
+  in
+  let state = State.create game_params in
+  let rec loop state =
+    if State.is_game_over state
+    then state
+    else
+      let player = Queue.dequeue_exn players in
+      let (Player.T (player_id, player_state, intf)) = player in
+      let action =
+        intf.Player.Intf.act player_state (State.specialize state player_id)
+      in
+      let state, _turn = State.eval_action_exn state action in
+      Queue.enqueue players player;
+      loop state
+  in
+  loop state
+
 
 (* module type Player = sig
  *   type t
