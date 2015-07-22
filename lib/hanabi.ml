@@ -372,20 +372,20 @@ module State = struct
     assert false
 end
 
-let () =
-  let state =
-    State.create (Game_params.standard ~player_count:2)
-    |> fun t -> State.eval_action_exn t (Action.Discard 2)
-    |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
-    |> fun (t, _) ->
-      let target = Player_id.of_int 1 in
-      let hint, hand_indices =
-        List.hd_exn (State.all_legal_hints t (Map.find_exn t.State.hands target))
-      in
-      State.eval_action_exn t (Action.Hint { Hint. target; hint; hand_indices })
-    |> fun (t, _) -> State.specialize t (Player_id.of_int 0)
-  in
-  printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state))
+(* let () =
+ *   let state =
+ *     State.create (Game_params.standard ~player_count:2)
+ *     |> fun t -> State.eval_action_exn t (Action.Discard 2)
+ *     |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
+ *     |> fun (t, _) ->
+ *       let target = Player_id.of_int 1 in
+ *       let hint, hand_indices =
+ *         List.hd_exn (State.all_legal_hints t (Map.find_exn t.State.hands target))
+ *       in
+ *       State.eval_action_exn t (Action.Hint { Hint. target; hint; hand_indices })
+ *     |> fun (t, _) -> State.specialize t (Player_id.of_int 0)
+ *   in
+ *   printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state)) *)
 
 module Player = struct
   module Intf = struct
@@ -395,6 +395,11 @@ module Player = struct
       }
 
     type wrapped = T:'a t -> wrapped
+
+    let auto_player =
+      let create _ = () in
+      let act () _state = Action.Play 1 in
+      T { create; act }
   end
 
   type 'a t = Player_id.t * 'a * 'a Intf.t
@@ -426,6 +431,13 @@ let play game_params players =
   loop state
 
 
+let () =
+  let state =
+    play (Game_params.standard ~player_count:2)
+      [ Player.Intf.auto_player
+      ; Player.Intf.auto_player ]
+  in
+  printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state))
 (* module type Player = sig
  *   type t
  *   val update: t -> Action.t -> unit

@@ -105,6 +105,8 @@ module Player : sig
       }
 
     type wrapped = T:'a t -> wrapped
+
+    val auto_player : wrapped
   end
 
   type 'a t = Player_id.t * 'a * 'a Intf.t
