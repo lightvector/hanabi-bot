@@ -53,6 +53,8 @@ module Game_params : sig
     ; hand_size: int
     }
   with sexp
+
+  val standard: player_count:int -> t
 end
 
 (* An instance of the game state.
@@ -73,9 +75,9 @@ module State : sig
     ; hands: Card_id.t list Player_id.Map.t
     ; card_infos: 'annot Card_info.t Card_id.Map.t
     ; rev_history: Turn.t list
-    }
+    } with sexp_of
 
-  val create : Game_params.t -> unit t
+  val create : Game_params.t -> seed:int -> unit t
 
   val eval_turn_exn : 'a t -> Turn.t -> 'a t
 
@@ -114,4 +116,4 @@ module Player : sig
   type wrapped = T:'a t -> wrapped
 end
 
-val play : Game_params.t -> Player.Intf.wrapped list -> unit State.t
+val play : Game_params.t -> Player.Intf.wrapped list -> seed:int -> unit State.t

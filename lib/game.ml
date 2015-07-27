@@ -167,10 +167,9 @@ module State = struct
       0 <= i
       && i < t.game_params.Game_params.hand_size
 
-  let rec random_permutation l =
-    Random.self_init ();
+  let rec random_permutation l ~rand =
     let l_with_floats =
-      List.map l ~f:(fun a -> a, Random.float 1.)
+      List.map l ~f:(fun a -> a, Random.State.float rand 1.)
     in
     try
       List.sort l_with_floats ~cmp:(fun (_,x) (_,y) ->
@@ -180,7 +179,7 @@ module State = struct
         then -1
         else failwith "picked same floats")
       |> List.map ~f:fst
-    with _ -> random_permutation l
+    with _ -> random_permutation l ~rand
 
   (* GAMEPLAY *)
 
@@ -295,12 +294,13 @@ module State = struct
     eval_turn_exn t turn, turn
 
   (* creates the all-known-cards initial state *)
-  let create game_params =
+  let create game_params ~seed =
     let { Game_params. deck_params; initial_hints
 	; max_hints; bombs_before_loss; rainbow_colors
 	; rainbow_numbers; player_count; hand_size; _ } = game_params
     in
-    let cards = random_permutation (Deck_params.to_deck deck_params) in
+    let rand = Random.State.make [|seed|] in
+    let cards = random_permutation (Deck_params.to_deck deck_params) ~rand in
     let deck = List.init (List.length cards) ~f:Card_id.of_int in
     let bombs_left = bombs_before_loss in
     let hints_left = initial_hints in
@@ -372,21 +372,6 @@ module State = struct
     assert false
 end
 
-(* let () =
- *   let state =
- *     State.create (Game_params.standard ~player_count:2)
- *     |> fun t -> State.eval_action_exn t (Action.Discard 2)
- *     |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
- *     |> fun (t, _) ->
- *       let target = Player_id.of_int 1 in
- *       let hint, hand_indices =
- *         List.hd_exn (State.all_legal_hints t (Map.find_exn t.State.hands target))
- *       in
- *       State.eval_action_exn t (Action.Hint { Hint. target; hint; hand_indices })
- *     |> fun (t, _) -> State.specialize t (Player_id.of_int 0)
- *   in
- *   printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state)) *)
-
 module Player = struct
   module Intf = struct
     type 'a t =
@@ -407,14 +392,14 @@ module Player = struct
   type wrapped = T:'a t -> wrapped
 end
 
-let play game_params players =
+let play game_params players ~seed =
   let players =
     List.mapi players ~f:(fun i (Player.Intf.T intf) ->
       let player_id = Player_id.of_int i in
       Player.T (player_id, intf.Player.Intf.create player_id, intf))
     |> Queue.of_list
   in
-  let state = State.create game_params in
+  let state = State.create game_params ~seed in
   let rec loop state =
     if State.is_game_over state
     then state
@@ -429,17 +414,3 @@ let play game_params players =
       loop state
   in
   loop state
-
-
-let () =
-  let state =
-    play (Game_params.standard ~player_count:2)
-      [ Player.Intf.auto_player
-      ; Player.Intf.auto_player ]
-  in
-  printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state))
-(* module type Player = sig
- *   type t
- *   val update: t -> Action.t -> unit
- *   val act: t -> State.t -> Action.t
- * end *)
