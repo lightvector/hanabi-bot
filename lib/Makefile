@@ -1,4 +1,4 @@
-SOURCES = hanabi_types.ml hanabi.ml game.ml
+SOURCES = hanabi_types.ml hanabi.ml
 PACKS   = core sexplib sexplib.syntax comparelib comparelib.syntax
 RESULT  = hanabi.exe
 THREADS = y
