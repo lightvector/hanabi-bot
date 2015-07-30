@@ -1,13 +1,13 @@
 open Core.Std
 open Hanabi_types
 
-module Card_info = struct
-  type 'annot t =
-    { id: Card_id.t
-    ; card: Card.t option
-    ; annot: 'annot
-    } with sexp
-end
+(* module Card_info = struct
+ *   type t =
+ *     { id: Card_id.t
+ *     ; card: Card.t option
+ *     ; annot: 'annot
+ *     } with sexp
+ * end *)
 
 module Turn = struct
   type event =
@@ -97,8 +97,8 @@ module State = struct
     ; final_turns_left: int
     ; played_cards: Card_id.t list Color.Map.t
     ; discarded_cards: Card_id.t list
+    ; known_cards: Card.t Card_id.Map.t
     ; hands: Card_id.t list Player_id.Map.t
-    ; card_infos: 'annot Card_info.t Card_id.Map.t
     ; rev_history: Turn.t list
     }
   with sexp
@@ -115,12 +115,7 @@ module State = struct
       |> Player_id.of_int
 
   let identify_card_exn t card_id =
-    match Map.find t.card_infos card_id with
-    | None -> assert false
-    | Some card_info ->
-      match card_info.Card_info.card with
-      | None -> assert false
-      | Some card -> card
+    Map.find_exn t.known_cards card_id
 
   let is_playable_exn t card =
     let { Card. color; number } = card in
@@ -189,8 +184,7 @@ module State = struct
     let active_player = next_player t in
     let card_details_of_index i =
       let card_id = List.nth_exn (Player_id.Map.find_exn t.hands active_player) i in
-      let card_info = Card_id.Map.find_exn t.card_infos card_id in
-      let card = Option.value_exn card_info.Card_info.card in
+      let card = identify_card_exn t card_id in
       (i, card_id, card)
     in
     let events =
@@ -211,9 +205,7 @@ module State = struct
           match t.deck with
           | [] -> []
           | next_card_id :: _ ->
-            let next_card =
-              Option.value_exn (Card_id.Map.find_exn t.card_infos next_card_id).Card_info.card
-            in
+            let next_card = identify_card_exn t next_card_id in
             [ Turn.Draw (next_card_id, Some next_card) ]
       in
       non_draw_event :: draws
@@ -313,17 +305,14 @@ module State = struct
       List.fold players ~init
         ~f:(fun map p -> Player_id.Map.add map ~key:p ~data:[])
     in
-    let card_infos =
-      let init = Card_id.Map.empty in
+    let known_cards =
       List.zip_exn deck cards
-      |> List.fold ~init ~f:(fun map (id, card) ->
-        let data = { Card_info. id; card = Some card; annot = () } in
-        Card_id.Map.add map ~key:id ~data)
+      |> Card_id.Map.of_alist_exn
     in
     let rev_history = [] in
     let init =
       { game_params; deck; bombs_left; hints_left; final_turns_left
-      ; played_cards; discarded_cards; hands; card_infos; rev_history }
+      ; played_cards; discarded_cards; hands; known_cards; rev_history }
     in
     let initial_turns =
       List.init (hand_size * player_count)
@@ -344,17 +333,17 @@ module State = struct
       @ t.deck
     in
     let is_invisible card_id = List.mem invisible_cards card_id in
-    { t with
-      card_infos = Card_id.Map.mapi t.card_infos ~f:(fun ~key:card_id ~data:card_info ->
-        if is_invisible card_id
-        then { card_info with Card_info. card = None }
-        else card_info);
-      rev_history = List.map t.rev_history ~f:(fun turn ->
-        { turn with
-          Turn. events = List.map turn.Turn.events ~f:(fun event ->
-            match event with
-            | Turn.Draw (card_id, _) -> Turn.Draw (card_id, None)
-            | _ -> event)})}
+    { t with known_cards = Card_id.Map.filter t.known_cards
+        ~f:(fun ~key:card_id ~data:_ -> not (is_invisible card_id))
+      ; rev_history = List.map t.rev_history ~f:(fun turn ->
+        if not (turn.who = player)
+        then turn
+        else
+          { turn with
+            Turn. events = List.map turn.Turn.events ~f:(fun event ->
+              match event with
+              | Turn.Draw (card_id, _) -> Turn.Draw (card_id, None)
+              | _ -> event)})}
 
   let score t =
     if t.bombs_left = 0
@@ -396,10 +385,6 @@ module Player = struct
 
     type wrapped = T:'a t -> wrapped
 
-    let auto_player =
-      let create _ = () in
-      let act () _state = Action.Play 1 in
-      T { create; act }
   end
 
   type 'a t = Player_id.t * 'a * 'a Intf.t
@@ -430,12 +415,18 @@ let play game_params players =
   in
   loop state
 
+let auto_player =
+  let create _ = () in
+  let act () _state = Action.Play 1 in
+  Player.Intf.T { create; act }
+
+let _base_player () = assert false
 
 let () =
   let state =
     play (Game_params.standard ~player_count:2)
-      [ Player.Intf.auto_player
-      ; Player.Intf.auto_player ]
+      [ auto_player
+      ; auto_player ]
   in
   printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state))
 (* module type Player = sig

@@ -3,14 +3,14 @@ open Hanabi_types
 
 (* A card that may or may not be visible, with an arbitrary annotation on it to record
    information about that card. *)
-module Card_info : sig
-  type 'annot t =
-    { id: Card_id.t
-(* Some implies the card is visible *)
-    ; card: Card.t option
-    ; annot: 'annot
-    }
-end
+(* module Card_info : sig
+ *   type 'annot t =
+ *     { id: Card_id.t
+ * (\* Some implies the card is visible *\)
+ *     ; card: Card.t option
+ *     ; annot: 'annot
+ *     }
+ * end *)
 
 module Turn : sig
   type event =
@@ -70,8 +70,8 @@ module State : sig
     ; final_turns_left: int
     ; played_cards: Card_id.t list Color.Map.t
     ; discarded_cards: Card_id.t list
+    ; known_cards: Card.t Card_id.Map.t
     ; hands: Card_id.t list Player_id.Map.t
-    ; card_infos: 'annot Card_info.t Card_id.Map.t
     ; rev_history: Turn.t list
     }
 
@@ -105,13 +105,13 @@ module Player : sig
       }
 
     type wrapped = T:'a t -> wrapped
-
-    val auto_player : wrapped
   end
 
   type 'a t = Player_id.t * 'a * 'a Intf.t
 
   type wrapped = T:'a t -> wrapped
 end
+
+val auto_player : Player.Intf.wrapped
 
 val play : Game_params.t -> Player.Intf.wrapped list -> unit State.t
