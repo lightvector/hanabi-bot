@@ -24,7 +24,7 @@ let sandbox_command =
       in
       printf "%s\n%!" (Sexp.to_string (Game.State.sexp_of_t (fun _ -> Sexp.unit) state))
 
-        (*
+(* let () =
  *   let state =
  *     State.create (Game_params.standard ~player_count:2)
  *     |> fun t -> State.eval_action_exn t (Action.Discard 2)
@@ -43,11 +43,9 @@ let sandbox_command =
     )
 ;;
 
-
 let command =
   Command.group ~summary:"Hanabi!"
     [ "sandbox", sandbox_command ]
-
 ;;
 
 Exn.handle_uncaught ~exit:true (fun () -> Command.run command)
