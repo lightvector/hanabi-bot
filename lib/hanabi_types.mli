@@ -13,6 +13,7 @@ module Color : sig
 
   val default_5: t list
   val rainbow_6: t list
+  val all: t list
 
   val to_string: t -> string
 end
@@ -40,6 +41,7 @@ module Card : sig
   with sexp
 
   val to_string: t -> string
+  val to_ansicolor_string: t -> string
 end
 
 (* An id for a player, unique per game *)

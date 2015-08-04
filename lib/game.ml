@@ -20,6 +20,8 @@ module Turn = struct
     { who : Player_id.t
     ; events : event list
     } with sexp
+
+  let to_string t = Sexp.to_string (sexp_of_t t)
 end
 
 module Deck_params = struct
@@ -86,6 +88,19 @@ module Game_params = struct
       hand_size;
     }
 
+  let max_score t =
+    let deck = Deck_params.to_deck t.deck_params in
+    List.fold Color.all ~init:0 ~f:(fun sum color ->
+      let max =
+        List.fold deck ~init:0 ~f:(fun max card ->
+          if card.Card.color = color
+          then Int.max max card.Card.number
+          else max
+        )
+      in
+      sum + max
+    )
+
 end
 
 module State = struct
@@ -102,6 +117,50 @@ module State = struct
     ; rev_history: Turn.t list
     }
   with sexp
+
+  (* MISC *)
+  let display_string ?(use_ansi_colors=false) t =
+    let player_ids = Map.keys t.hands |> List.sort ~cmp:Player_id.compare in
+    let hand_str =
+      List.map player_ids ~f:(fun id ->
+        let hand = Player_id.Map.find_exn t.hands id in
+        let hand_str =
+          List.map hand ~f:(fun card_id ->
+            let info = Map.find_exn t.card_infos card_id in
+            match info.Card_info.card with
+            | None -> "?"
+            | Some card ->
+              if use_ansi_colors
+              then Card.to_ansicolor_string card
+              else Card.to_string card
+          )
+          |> String.concat ~sep:""
+        in
+        sprintf "P%d: %s" id hand_str
+      )
+      |> String.concat ~sep:" "
+    in
+    let played_str =
+      List.map (Map.data t.played_cards) ~f:(fun cards ->
+        let cards = List.map cards ~f:(fun id ->
+          Option.value_exn (Map.find_exn t.card_infos id).Card_info.card)
+        in
+        match List.reduce cards ~f:(fun x y ->
+          if Number.(>) x.Card.number y.Card.number then x else y)
+        with
+        | None -> ""
+        | Some card ->
+          if use_ansi_colors
+          then Card.to_ansicolor_string card
+          else Card.to_string card
+      )
+      |> String.concat ~sep:" "
+    in
+    sprintf "Hintsleft %d Bombsleft %d Played: %s  %s"
+      t.hints_left t.bombs_left played_str hand_str
+
+
+
 
   (* BASIC UTILITIES *)
 
@@ -380,11 +439,6 @@ module Player = struct
       }
 
     type wrapped = T:'a t -> wrapped
-
-    let auto_player =
-      let create _ = () in
-      let act () _state = Action.Play 1 in
-      T { create; act }
   end
 
   type 'a t = Player_id.t * 'a * 'a Intf.t

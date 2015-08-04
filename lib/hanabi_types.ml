@@ -1,4 +1,5 @@
 open Core.Std
+(* open Core_extended.Std *)
 
 module Color = struct
   module T = struct
@@ -16,6 +17,7 @@ module Color = struct
 
   let default_5 = [ Red; Yellow; Green; Blue; White ]
   let rainbow_6 = [ Red; Yellow; Green; Blue; White; Rainbow ]
+  let all = rainbow_6
 
   let to_string t =
     match t with
@@ -50,6 +52,19 @@ module Card = struct
 
   let to_string t =
     Color.to_string t.color ^ Number.to_string t.number
+
+  let to_ansicolor_string t =
+    to_string t
+   (* CR dwu: This doesn't work for me, because when I compile it can't link stuff for
+      the google "re2" library that color print uses *)
+    (* let s = Number.to_string t.number in
+     * match t.color with
+     * | Color.Red -> Color_print.red s
+     * | Color.Green -> Color_print.green s
+     * | Color.Blue -> Color_print.blue s
+     * | Color.Yellow -> Color_print.yellow s
+     * | Color.White -> s
+     * | Color.Rainbow -> Color_print.magenta s *)
 end
 
 module Player_id = struct
