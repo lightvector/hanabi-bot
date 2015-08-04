@@ -1,17 +1,6 @@
 open Core.Std
 open Hanabi_types
 
-(* A card that may or may not be visible, with an arbitrary annotation on it to record
-   information about that card. *)
-module Card_info : sig
-  type 'annot t =
-    { id: Card_id.t
-(* Some implies the card is visible *)
-    ; card: Card.t option
-    ; annot: 'annot
-    }
-end
-
 module Turn : sig
   type event =
     | Hint of Hint.t
@@ -72,10 +61,10 @@ module State : sig
     ; final_turns_left: int
     ; played_cards: Card_id.t list Color.Map.t
     ; discarded_cards: Card_id.t list
+    ; known_cards: Card.t Card_id.Map.t
     ; hands: Card_id.t list Player_id.Map.t
-    ; card_infos: 'annot Card_info.t Card_id.Map.t
     ; rev_history: Turn.t list
-    } with sexp_of
+    } with sexp
 
   val create : Game_params.t -> seed:int -> unit t
 
