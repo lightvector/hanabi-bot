@@ -1,4 +1,5 @@
 open Core.Std
+(* open Core_extended.Std *)
 
 module Color = struct
   module T = struct
@@ -16,6 +17,7 @@ module Color = struct
 
   let default_5 = [ Red; Yellow; Green; Blue; White ]
   let rainbow_6 = [ Red; Yellow; Green; Blue; White; Rainbow ]
+  let all = rainbow_6
 
   let to_string t =
     match t with
@@ -50,6 +52,19 @@ module Card = struct
 
   let to_string t =
     Color.to_string t.color ^ Number.to_string t.number
+
+  let to_ansicolor_string t =
+    let s = Number.to_string t.number in
+    let code =
+      match t.color with
+      | Color.Red -> "\x1b[31m"
+      | Color.Green -> "\x1b[32m"
+      | Color.Blue -> "\x1b[34m"
+      | Color.Yellow -> "\x1b[33m"
+      | Color.White -> ""
+      | Color.Rainbow -> "\x1b[35m"
+    in
+    code ^ s ^ "\x1b[0m"
 end
 
 module Player_id = struct
