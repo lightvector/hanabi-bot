@@ -87,6 +87,7 @@ let simulate_command =
       let game_params = Game_params.standard ~player_count:(Queue.length player_queue) in
       let max_score = Game_params.max_score game_params in
       let score_freqs = Array.create ~len:(max_score+1) 0 in
+      let played_freqs = Array.create ~len:(max_score+1) 0 in
       for i = 0 to num_games - 1 do
         if print_games
         then printf "\nGame %d\n" i
@@ -109,22 +110,36 @@ let simulate_command =
         let state = ref (State.create game_params ~seed) in
         if print_games
         then begin
-          List.iter history ~f:(fun turn ->
-            printf "%s\n" (State.display_string !state ~use_ansi_colors);
-            printf "%s\n" (Turn.to_string turn);
-            state := State.eval_turn_exn !state turn
+          List.iteri history ~f:(fun i turn ->
+            (* Exclude the initial card draws that occur when the state is created fresh *)
+            if i >= List.length !state.State.rev_history
+            then begin
+              printf "%s\n" (State.display_string !state ~use_ansi_colors);
+              printf "%s\n" (Turn.to_string turn);
+              state := State.eval_turn_exn !state turn
+            end
           );
           printf "%s\n%!" (State.display_string !state ~use_ansi_colors);
         end;
-        let score = State.score !state in
+        let score = State.score final_state in
+        let num_played = State.num_played final_state in
         score_freqs.(score) <- score_freqs.(score) + 1;
+        played_freqs.(num_played) <- played_freqs.(num_played) + 1;
       done;
-      printf "Score frequency table: \n";
+      printf "Num games: %d\n" num_games;
+      printf "Score and num_played frequency table: \n";
       Array.iteri score_freqs ~f:(fun score freq ->
-        printf "%d: %d (%.2f%%)\n"
-          score freq (Float.of_int freq /. Float.of_int num_games *. 100.)
+        let played_freq = played_freqs.(score) in
+        printf "%d: %d (%.2f%%)  %d (%.2f%%)\n"
+          score
+          freq (Float.of_int freq /. Float.of_int num_games *. 100.)
+          played_freq (Float.of_int played_freq /. Float.of_int num_games *. 100.)
       );
       printf "\n%!";
+      let sum_score = Array.foldi score_freqs ~init:0 ~f:(fun i acc x -> acc + i * x) in
+      let sum_played = Array.foldi played_freqs ~init:0 ~f:(fun i acc x -> acc + i * x) in
+      printf "Avg score = %.3f\n" (Float.of_int sum_score /. Float.of_int num_games);
+      printf "Avg played = %.3f\n" (Float.of_int sum_played /. Float.of_int num_games);
     )
 
 

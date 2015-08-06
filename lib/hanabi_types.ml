@@ -54,17 +54,17 @@ module Card = struct
     Color.to_string t.color ^ Number.to_string t.number
 
   let to_ansicolor_string t =
-    to_string t
-   (* CR dwu: This doesn't work for me, because when I compile it can't link stuff for
-      the google "re2" library that color print uses *)
-    (* let s = Number.to_string t.number in
-     * match t.color with
-     * | Color.Red -> Color_print.red s
-     * | Color.Green -> Color_print.green s
-     * | Color.Blue -> Color_print.blue s
-     * | Color.Yellow -> Color_print.yellow s
-     * | Color.White -> s
-     * | Color.Rainbow -> Color_print.magenta s *)
+    let s = Number.to_string t.number in
+    let code =
+      match t.color with
+      | Color.Red -> "\x1b[31m"
+      | Color.Green -> "\x1b[32m"
+      | Color.Blue -> "\x1b[34m"
+      | Color.Yellow -> "\x1b[33m"
+      | Color.White -> ""
+      | Color.Rainbow -> "\x1b[35m"
+    in
+    code ^ s ^ "\x1b[0m"
 end
 
 module Player_id = struct

@@ -118,50 +118,6 @@ module State = struct
     }
   with sexp
 
-  (* MISC *)
-  let display_string ?(use_ansi_colors=false) t =
-    let player_ids = Map.keys t.hands |> List.sort ~cmp:Player_id.compare in
-    let hand_str =
-      List.map player_ids ~f:(fun id ->
-        let hand = Player_id.Map.find_exn t.hands id in
-        let hand_str =
-          List.map hand ~f:(fun card_id ->
-            let info = Map.find_exn t.card_infos card_id in
-            match info.Card_info.card with
-            | None -> "?"
-            | Some card ->
-              if use_ansi_colors
-              then Card.to_ansicolor_string card
-              else Card.to_string card
-          )
-          |> String.concat ~sep:""
-        in
-        sprintf "P%d: %s" id hand_str
-      )
-      |> String.concat ~sep:" "
-    in
-    let played_str =
-      List.map (Map.data t.played_cards) ~f:(fun cards ->
-        let cards = List.map cards ~f:(fun id ->
-          Option.value_exn (Map.find_exn t.card_infos id).Card_info.card)
-        in
-        match List.reduce cards ~f:(fun x y ->
-          if Number.(>) x.Card.number y.Card.number then x else y)
-        with
-        | None -> ""
-        | Some card ->
-          if use_ansi_colors
-          then Card.to_ansicolor_string card
-          else Card.to_string card
-      )
-      |> String.concat ~sep:" "
-    in
-    sprintf "Hintsleft %d Bombsleft %d Played: %s  %s"
-      t.hints_left t.bombs_left played_str hand_str
-
-
-
-
   (* BASIC UTILITIES *)
 
   let next_player t =
@@ -415,12 +371,14 @@ module State = struct
             | Turn.Draw (card_id, _) -> Turn.Draw (card_id, None)
             | _ -> event)})}
 
+  let num_played t =
+    List.fold (List.map ~f:snd (Color.Map.to_alist t.played_cards)) ~init:0
+      ~f:(fun acc plays -> acc + List.length plays)
   let score t =
     if t.bombs_left = 0
     then 0
-    else
-      List.fold (List.map ~f:snd (Color.Map.to_alist t.played_cards)) ~init:0
-        ~f:(fun acc plays -> acc + List.length plays)
+    else num_played t
+
 
   let is_game_over t =
     t.bombs_left = 0
@@ -429,12 +387,60 @@ module State = struct
   let map_annots t ~cards ~actions =
     (* CR dwu: TODO *)
     assert false
+
+
+  (* MISC *)
+  let display_string ?(use_ansi_colors=false) t =
+    let player_ids = Map.keys t.hands |> List.sort ~cmp:Player_id.compare in
+    let next_player = next_player t in
+    let hand_str =
+      List.map player_ids ~f:(fun id ->
+        let hand = Player_id.Map.find_exn t.hands id in
+        let hand_str =
+          List.map hand ~f:(fun card_id ->
+            let info = Map.find_exn t.card_infos card_id in
+            match info.Card_info.card with
+            | None -> "?"
+            | Some card ->
+              if use_ansi_colors
+              then Card.to_ansicolor_string card
+              else Card.to_string card
+          )
+          |> String.concat ~sep:""
+        in
+        let to_play_str =
+          if next_player = id
+          then "*"
+          else ""
+        in
+        sprintf "%sP%d: %s" to_play_str id hand_str
+      )
+      |> String.concat ~sep:" "
+    in
+    let played_str =
+      List.map (Map.data t.played_cards) ~f:(fun cards ->
+        let cards = List.map cards ~f:(fun id ->
+          Option.value_exn (Map.find_exn t.card_infos id).Card_info.card)
+        in
+        match List.reduce cards ~f:(fun x y ->
+          if Number.(>) x.Card.number y.Card.number then x else y)
+        with
+        | None -> ""
+        | Some card ->
+          if use_ansi_colors
+          then Card.to_ansicolor_string card
+          else Card.to_string card
+      )
+      |> String.concat ~sep:" "
+    in
+    sprintf "Hintsleft %d Bombsleft %d Played: %s  %s"
+      t.hints_left t.bombs_left played_str hand_str
 end
 
 module Player = struct
   module Intf = struct
     type 'a t =
-      { create : (Player_id.t -> 'a)
+      { create : (Player_id.t -> seed:int -> 'a)
       ; act : ('a -> unit State.t -> Action.t)
       }
 
@@ -450,7 +456,7 @@ let play game_params players ~seed =
   let players =
     List.mapi players ~f:(fun i (Player.Intf.T intf) ->
       let player_id = Player_id.of_int i in
-      Player.T (player_id, intf.Player.Intf.create player_id, intf))
+      Player.T (player_id, intf.Player.Intf.create player_id ~seed, intf))
     |> Queue.of_list
   in
   let state = State.create game_params ~seed in

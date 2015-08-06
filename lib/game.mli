@@ -87,7 +87,9 @@ module State : sig
   val eval_turn_exn : 'a t -> Turn.t -> 'a t
   val eval_action_exn : 'a t -> Action.t -> 'a t * Turn.t
 
+  val next_player: 'a t -> Player_id.t
   val score : 'a t -> int
+  val num_played : 'a t -> int
 
   val display_string :
     ?use_ansi_colors:bool -> 'a t -> string
@@ -112,7 +114,7 @@ end
 module Player : sig
   module Intf : sig
     type 'a t =
-      { create : (Player_id.t -> 'a)
+      { create : (Player_id.t -> seed:int -> 'a)
       ; act : ('a -> unit State.t -> Action.t)
       }
 
