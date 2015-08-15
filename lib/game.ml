@@ -6,7 +6,7 @@ module Turn = struct
   | Hint of Hint.t
   | Discard of int * Card_id.t * Card.t
   | Play of int * Card_id.t * Card.t
-  | Draw of Card_id.t * Card.t option
+  | Draw of Card_id.t
   with sexp
   type t =
     { who : Player_id.t
@@ -81,7 +81,7 @@ module Game_params = struct
 end
 
 module State = struct
-  type 'annot t =
+  type t =
     { game_params: Game_params.t
     ; deck: Card_id.t list
     ; bombs_left: int
@@ -196,8 +196,7 @@ module State = struct
           match t.deck with
           | [] -> []
           | next_card_id :: _ ->
-            let next_card = identify_card_exn t next_card_id in
-            [ Turn.Draw (next_card_id, Some next_card) ]
+            [ Turn.Draw next_card_id ]
       in
       non_draw_event :: draws
     in
@@ -216,7 +215,7 @@ module State = struct
           else 1, 0, None, Some card_id, None
         | Turn.Hint _ ->
           0, 1, None, None, None
-        | Turn.Draw (card_id, _) ->
+        | Turn.Draw card_id ->
           0, 0, None, None, Some card_id
       in
       let deck =
@@ -310,14 +309,10 @@ module State = struct
       List.init (hand_size * player_count)
         ~f:(fun i ->
           { Turn. who = Player_id.of_int (i mod player_count)
-          ; events = [ Turn.Draw (Card_id.of_int i, None) ] }
+          ; events = [ Turn.Draw (Card_id.of_int i) ] }
         )
     in
     List.fold initial_turns ~init ~f:eval_turn_exn
-
-  let legal_hints t =
-    (* CR dwu: TODO *)
-    assert false
 
   let specialize t player =
     let invisible_cards =
@@ -328,13 +323,13 @@ module State = struct
     { t with known_cards = Card_id.Map.filter t.known_cards
         ~f:(fun ~key:card_id ~data:_ -> not (is_invisible card_id))
       ; rev_history = List.map t.rev_history ~f:(fun turn ->
-        if not (turn.who = player)
+        if not (turn.Turn.who = player)
         then turn
         else
           { turn with
             Turn. events = List.map turn.Turn.events ~f:(fun event ->
               match event with
-              | Turn.Draw (card_id, _) -> Turn.Draw (card_id, None)
+              | Turn.Draw card_id -> Turn.Draw card_id
               | _ -> event)})}
 
   let score t =
@@ -347,10 +342,6 @@ module State = struct
   let is_game_over t =
     t.bombs_left = 0
     || t.final_turns_left = 0
-
-  let map_annots t ~cards ~actions =
-    (* CR dwu: TODO *)
-    assert false
 end
 
 (* let () =
@@ -372,7 +363,7 @@ module Player = struct
   module Intf = struct
     type 'a t =
       { create : (Player_id.t -> 'a)
-      ; act : ('a -> unit State.t -> Action.t)
+      ; act : ('a -> State.t -> Action.t)
       }
 
     type wrapped = T:'a t -> wrapped
@@ -389,6 +380,7 @@ module Player = struct
 end
 
 let play game_params players ~seed =
+  assert (game_params.Game_params.player_count = List.length players);
   let players =
     List.mapi players ~f:(fun i (Player.Intf.T intf) ->
       let player_id = Player_id.of_int i in
@@ -413,13 +405,13 @@ let play game_params players ~seed =
 
 let _base_player () = assert false
 
-let () =
-  let state =
-    play (Game_params.standard ~player_count:2)
-      [ auto_player
-      ; auto_player ]
-  in
-  printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state))
+(* let () =
+ *   let state =
+ *     play (Game_params.standard ~player_count:2) ~seed:123
+ *       [ Player.Intf.auto_player
+ *       ; Player.Intf.auto_player ]
+ *   in
+ *   printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state)) *)
 (* module type Player = sig
  *   type t
  *   val update: t -> Action.t -> unit

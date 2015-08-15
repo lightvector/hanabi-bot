@@ -6,7 +6,7 @@ module Turn : sig
     | Hint of Hint.t
     | Discard of int * Card_id.t * Card.t
     | Play of int * Card_id.t * Card.t
-    | Draw of Card_id.t * Card.t option
+    | Draw of Card_id.t
 
   type t =
       { who : Player_id.t
@@ -52,7 +52,7 @@ end
    whether the [card] field in the various [Annotated_card.t] are Some or None. *)
 (* CR stabony: should this contain Game_params.t? *)
 module State : sig
-  type 'annot t =
+  type t =
     { game_params: Game_params.t
     ; deck: Card_id.t list
     ; bombs_left: int
@@ -68,9 +68,11 @@ module State : sig
 
   val create : Game_params.t -> seed:int -> unit t
 
-  val eval_turn_exn : 'a t -> Turn.t -> 'a t
+  val eval_turn_exn : t -> Turn.t -> t
 
-  val eval_action_exn : 'a t -> Action.t -> 'a t * Turn.t
+  val eval_action_exn : t -> Action.t -> t * Turn.t
+
+  val identify_card_exn : t -> Card_id.t -> Card.t
   (* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
   (* val is_definitely_legal_exn: 'a t -> Action.t -> bool
    *
@@ -92,7 +94,7 @@ module Player : sig
   module Intf : sig
     type 'a t =
       { create : (Player_id.t -> 'a)
-      ; act : ('a -> unit State.t -> Action.t)
+      ; act : ('a -> State.t -> Action.t)
       }
 
     type wrapped = T:'a t -> wrapped
@@ -105,4 +107,4 @@ module Player : sig
   type wrapped = T:'a t -> wrapped
 end
 
-val play : Game_params.t -> Player.Intf.wrapped list -> seed:int -> unit State.t
+val play : Game_params.t -> Player.Intf.wrapped list -> seed:int -> State.t
