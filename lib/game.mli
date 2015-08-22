@@ -1,23 +1,12 @@
 open Core.Std
 open Hanabi_types
 
-(* A card that may or may not be visible, with an arbitrary annotation on it to record
-   information about that card. *)
-module Card_info : sig
-  type 'annot t =
-    { id: Card_id.t
-(* Some implies the card is visible *)
-    ; card: Card.t option
-    ; annot: 'annot
-    }
-end
-
 module Turn : sig
   type event =
     | Hint of Hint.t
     | Discard of int * Card_id.t * Card.t
     | Play of int * Card_id.t * Card.t
-    | Draw of Card_id.t * Card.t option
+    | Draw of Card_id.t
   with sexp
 
   type t =
@@ -42,7 +31,7 @@ end
 
 (* Represents the parameters for a given game.
    Some of these fields are redundant, but convenient *)
-module Game_params : sig
+module Params : sig
   type t =
     (* we could remove this and use number_distribution below if we want all colors to have the same distribution *)
     { deck_params: Deck_params.t
@@ -66,10 +55,10 @@ end
    Capable of representing game states that are globally known, as well as game states
    as seen by one player (or seen by one player as envisioned by another), based on
    whether the [card] field in the various [Annotated_card.t] are Some or None. *)
-(* CR stabony: should this contain Game_params.t? *)
+(* CR stabony: should this contain Params.t? *)
 module State : sig
-  type 'annot t =
-    { game_params: Game_params.t
+  type t =
+    { game_params: Params.t
     ; deck: Card_id.t list
     ; bombs_left: int
     ; hints_left: int
@@ -77,23 +66,27 @@ module State : sig
     ; final_turns_left: int
     ; played_cards: Card_id.t list Color.Map.t
     ; discarded_cards: Card_id.t list
+    ; known_cards: Card.t Card_id.Map.t
     ; hands: Card_id.t list Player_id.Map.t
-    ; card_infos: 'annot Card_info.t Card_id.Map.t
     ; rev_history: Turn.t list
-    } with sexp_of
+    } with sexp
 
-  val create : Game_params.t -> seed:int -> unit t
+  val create : Params.t -> seed:int -> t
 
-  val eval_turn_exn : 'a t -> Turn.t -> 'a t
-  val eval_action_exn : 'a t -> Action.t -> 'a t * Turn.t
+  val eval_turn_exn : t -> Turn.t -> t
 
-  val next_player: 'a t -> Player_id.t
-  val score : 'a t -> int
-  val num_played : 'a t -> int
+  val eval_action_exn : t -> Action.t -> t * Turn.t
+
+  val next_player: t -> Player_id.t
+  val score : t -> int
+  val num_played : t -> int
+
+  val identify_card_exn : t -> Card_id.t -> Card.t
+
+  val all_legal_hints : t -> Card_id.t list -> (Hint.hint * int list) list
 
   val display_string :
     ?use_ansi_colors:bool -> 'a t -> string
-
   (* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
   (* val is_definitely_legal_exn: 'a t -> Action.t -> bool
    *
@@ -115,7 +108,7 @@ module Player : sig
   module Intf : sig
     type 'a t =
       { create : (Player_id.t -> seed:int -> 'a)
-      ; act : ('a -> unit State.t -> Action.t)
+      ; act : ('a -> State.t -> Action.t)
       }
 
     type wrapped = T:'a t -> wrapped
@@ -126,4 +119,4 @@ module Player : sig
   type wrapped = T:'a t -> wrapped
 end
 
-val play : Game_params.t -> Player.Intf.wrapped list -> seed:int -> unit State.t
+val play : Params.t -> Player.Intf.wrapped list -> seed:int -> State.t
