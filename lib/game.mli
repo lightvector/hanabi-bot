@@ -27,7 +27,7 @@ end
 
 (* Represents the parameters for a given game.
    Some of these fields are redundant, but convenient *)
-module Game_params : sig
+module Params : sig
   type t =
     (* we could remove this and use number_distribution below if we want all colors to have the same distribution *)
     { deck_params: Deck_params.t
@@ -50,10 +50,10 @@ end
    Capable of representing game states that are globally known, as well as game states
    as seen by one player (or seen by one player as envisioned by another), based on
    whether the [card] field in the various [Annotated_card.t] are Some or None. *)
-(* CR stabony: should this contain Game_params.t? *)
+(* CR stabony: should this contain Params.t? *)
 module State : sig
   type t =
-    { game_params: Game_params.t
+    { game_params: Params.t
     ; deck: Card_id.t list
     ; bombs_left: int
     ; hints_left: int
@@ -66,13 +66,15 @@ module State : sig
     ; rev_history: Turn.t list
     } with sexp
 
-  val create : Game_params.t -> seed:int -> unit t
+  val create : Params.t -> seed:int -> t
 
   val eval_turn_exn : t -> Turn.t -> t
 
   val eval_action_exn : t -> Action.t -> t * Turn.t
 
   val identify_card_exn : t -> Card_id.t -> Card.t
+
+  val all_legal_hints : t -> Card_id.t list -> (Hint.hint * int list) list
   (* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
   (* val is_definitely_legal_exn: 'a t -> Action.t -> bool
    *
@@ -107,4 +109,4 @@ module Player : sig
   type wrapped = T:'a t -> wrapped
 end
 
-val play : Game_params.t -> Player.Intf.wrapped list -> seed:int -> State.t
+val play : Params.t -> Player.Intf.wrapped list -> seed:int -> State.t

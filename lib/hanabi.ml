@@ -18,15 +18,15 @@ let sandbox_command =
         | Some seed -> seed
       in
       let state =
-        Game.play (Game.Game_params.standard ~player_count:2) ~seed
+        Game.play (Game.Params.standard ~player_count:2) ~seed
           [ Game.Player.Intf.auto_player
           ; Game.Player.Intf.auto_player ]
       in
-      printf "%s\n%!" (Sexp.to_string (Game.State.sexp_of_t (fun _ -> Sexp.unit) state))
+      printf "%s\n%!" (Sexp.to_string (Game.State.sexp_of_t state))
 
 (* let () =
  *   let state =
- *     State.create (Game_params.standard ~player_count:2)
+ *     State.create (Params.standard ~player_count:2)
  *     |> fun t -> State.eval_action_exn t (Action.Discard 2)
  *     |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
  *     |> fun (t, _) ->

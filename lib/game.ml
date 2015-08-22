@@ -48,7 +48,7 @@ module Deck_params = struct
       !deck
 end
 
-module Game_params = struct
+module Params = struct
   type t =
     { deck_params: Deck_params.t
     ; initial_hints: int
@@ -82,7 +82,7 @@ end
 
 module State = struct
   type t =
-    { game_params: Game_params.t
+    { game_params: Params.t
     ; deck: Card_id.t list
     ; bombs_left: int
     ; hints_left: int
@@ -152,7 +152,7 @@ module State = struct
     | Action.Hint hint -> is_legal_hint_exn t hint
     | Action.Discard i | Action.Play i ->
       0 <= i
-      && i < t.game_params.Game_params.hand_size
+      && i < t.game_params.Params.hand_size
 
   let rec random_permutation l ~rand =
     let l_with_floats =
@@ -250,7 +250,7 @@ module State = struct
       in
       { t with deck
         ; bombs_left = t.bombs_left - bombs_used
-        ; hints_left = min (t.hints_left - hints_used) t.game_params.Game_params.max_hints
+        ; hints_left = min (t.hints_left - hints_used) t.game_params.Params.max_hints
         ; played_cards
         ; discarded_cards = begin
           match discard with
@@ -278,7 +278,7 @@ module State = struct
 
   (* creates the all-known-cards initial state *)
   let create game_params ~seed =
-    let { Game_params. deck_params; initial_hints
+    let { Params. deck_params; initial_hints
 	; max_hints; bombs_before_loss; rainbow_colors
 	; rainbow_numbers; player_count; hand_size; _ } = game_params
     in
@@ -346,7 +346,7 @@ end
 
 (* let () =
  *   let state =
- *     State.create (Game_params.standard ~player_count:2)
+ *     State.create (Params.standard ~player_count:2)
  *     |> fun t -> State.eval_action_exn t (Action.Discard 2)
  *     |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
  *     |> fun (t, _) ->
@@ -380,7 +380,7 @@ module Player = struct
 end
 
 let play game_params players ~seed =
-  assert (game_params.Game_params.player_count = List.length players);
+  assert (game_params.Params.player_count = List.length players);
   let players =
     List.mapi players ~f:(fun i (Player.Intf.T intf) ->
       let player_id = Player_id.of_int i in
@@ -407,7 +407,7 @@ let _base_player () = assert false
 
 (* let () =
  *   let state =
- *     play (Game_params.standard ~player_count:2) ~seed:123
+ *     play (Params.standard ~player_count:2) ~seed:123
  *       [ Player.Intf.auto_player
  *       ; Player.Intf.auto_player ]
  *   in
