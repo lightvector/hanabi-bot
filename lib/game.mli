@@ -86,7 +86,7 @@ module State : sig
   val all_legal_hints : t -> Card_id.t list -> (Hint.hint * int list) list
 
   val display_string :
-    ?use_ansi_colors:bool -> 'a t -> string
+    ?use_ansi_colors:bool -> t -> string
   (* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
   (* val is_definitely_legal_exn: 'a t -> Action.t -> bool
    *

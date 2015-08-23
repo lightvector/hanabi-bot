@@ -8,6 +8,7 @@ module Tag = struct
     } with sexp
 
   type t =
+  | Identified of Card.t
   | Hinted of card_state * Hint.hint * int list * int
   (* Currently using none of the below *)
   | Anti_hinted of card_state * Hint.hint
@@ -16,10 +17,13 @@ module Tag = struct
   with sexp
 end
 
-let is_playable card_state card =
-  match Map.find card_state.Tag.played card.Card.color with
+let playable_number_of_color card_state color =
+  match Map.find card_state color with
   | None -> Number.of_int 1
-  | Some n -> Number.of_int (n + 1)
+  | Some n -> Number.next n
+
+let is_playable card_state card =
+  card.Card.number = playable_number_of_color card_state.Tag.played card.Card.color
 
 let is_eventually_playable card_state card =
   let { Card. color; number } = card in
@@ -60,6 +64,9 @@ let is_danger card_state card =
         then discards_needed - 1
         else discards_needed) = 0
   end
+
+let is_discardable card_state card =
+  not (is_eventually_playable card_state card)
 
 let _maybe_identify_card tags =
   assert false
@@ -134,7 +141,29 @@ let update_state game_state state turn =
             then Map.add_multi tags ~key:card_id
               ~data:(Tag.Anti_hinted (card_state, hint)),
               hint_index
-            else Map.add_multi tags ~key:card_id
+            else
+              let identified_as =
+                match hint with
+                | Number number ->
+                  List.find_map tags ~f:(fun tag ->
+                    match tag with
+                    | Tag.Hinted (_, Color color, _, _) ->
+                      Some { Card. color; number }
+                    | _ -> None)
+                | Color color ->
+                  List.find_map tags ~f:(fun tag ->
+                    match tag with
+                    | Tag.Hinted (_, Number number, _, _) ->
+                      Some { Card. color; number }
+                    | _ -> None)
+              in
+              let tags =
+                match identified_as with
+                | None -> tags
+                | Some card ->
+                  Map.add_multi tags ~key:card_id ~data:(Tag.Identified card)
+              in
+              Map.add_multi tags ~key:card_id
               ~data:(Tag.Hinted (card_state, hint, hand_indices, hint_index)),
               hint_index + 1)
       in
@@ -242,8 +271,8 @@ let act state game_state =
     | Some hint -> Action.Hint hint
     | None ->
       let my_hand = Map.find_exn hands me in
-      let play =
-        List.fold my_hand ~init:None ~f:(fun play_opt card_id ->
+      let identified_play =
+        List.foldi my_hand ~init:None ~f:(fun i play_opt card_id ->
           if Option.is_some play_opt
           then play_opt
           else
@@ -252,23 +281,109 @@ let act state game_state =
             | Some card_tags ->
               if List.exists card_tags ~f:(fun card_tag ->
                 match card_tag with
-                | Hinted (hint_card_state, hint, indices, hint_index) ->
-                  hint_index = 0
-                  && (indices <> [ hand_size - 1 ])
-                  && (match hint with
-                  | Hint.Number number ->
-                    let possible_colors =
-                      Map.fold hint_card_state.Tag.played ~init:[]
-                        ~f:(fun acc ~key:color ~data ->
-                          if Number.next data = number
-                          then color :: acc
-                          else acc)
-                    in
-                    List.exists possible_colors ~f:(fun color ->
-                      match Map.find card_state.Tag.played with
-                      | None -> true
-                      | Some n -> Number.next n = number)
-                  | Hint.Color color ->
+                | Tag.Identified card -> is_playable card_state card
+                | _ -> false)
+              then Some i
+              else None)
+      in
+      match identified_play with
+      | Some i -> Action.Play i
+      | None ->
+        let hinted_play =
+          List.foldi my_hand ~init:None ~f:(fun i play_opt card_id ->
+            if Option.is_some play_opt
+            then play_opt
+            else
+              match Map.find tags card_id with
+              | None -> None
+              | Some card_tags ->
+                if List.exists card_tags ~f:(function
+                | Identified _ -> true
+                | _ -> false)
+                then None
+                else if List.exists card_tags ~f:(fun card_tag ->
+                  match card_tag with
+                  | Hinted (hint_card_state, hint, indices, hint_index) ->
+                    hint_index = 0
+                    && (indices <> [ hand_size - 1 ])
+                    && (match hint with
+                    | Hint.Number number ->
+                      let impossible_colors =
+                        List.filter_map card_tags ~f:(fun card_tag ->
+                          match card_tag with
+                          | Anti_hinted (_, hint) -> begin
+                            match hint with
+                            | Hint.Color color -> Some color
+                            | _ -> None
+                          end
+                          | _ -> None)
+                      in
+                      let possible_colors =
+                        Map.fold hint_card_state.Tag.played ~init:[]
+                          ~f:(fun acc ~key:color ~data ->
+                            if Number.next data = number
+                            then color :: acc
+                            else acc)
+                        |> List.filter ~f:(fun c -> not (List.mem impossible_colors) c)
+                      in
+                      List.exists possible_colors ~f:(fun color ->
+                        match Map.find card_state.Tag.played with
+                        | None -> true
+                        | Some n -> Number.next n = number)
+                    | Hint.Color color ->
+                      let implied_number =
+                        playable_number_of_color hint_card_state color
+                      in
+                      (implied_number = playable_number_of_color card_state color)
+                      && not (List.exists card_tags ~f:(function
+                      | Anti_hinted (_, hint) -> begin
+                        match hint with
+                        | Hint.Number implied_number -> true
+                        | _ -> false
+                      end
+                      | _ -> false))
+                    )
+                  | _ -> false)
+                then Some i
+                else None)
+        in
+        match hinted_play with
+        | Some i -> Action.Play i
+        | None ->
+          let identified_discard =
+            List.foldi my_hand ~init:None ~f:(fun i discard_opt card_id ->
+              if Option.is_some discard_opt
+              then discard_opt
+              else match Map.find tags card_id with
+              | None -> None
+              | Some card_tags ->
+                if List.exists card_tags ~f:(function
+                | Identified card -> is_discardable card_state card
+                | _ -> false)
+                then Some i
+                else None)
+          in
+          match identified_discard with
+          | Some i -> Action.Discard i
+          | None ->
+            let unhinted_discard =
+              List.foldi my_hand ~init:None ~f:(fun i discard_opt card_id ->
+                match Map.find tags card_id with
+                | None -> Some i
+                | Some card_tags ->
+                  if List.exists card_tags ~f:(function
+                  | Hinted _ -> true
+                  | _ -> false)
+                  then discard_opt
+                  else Some i)
+            in
+            match unhinted_discard with
+            | Some i -> Action.Discard i
+            | None -> Action.Discard (hand_size - 1)
+
+
+
+
                     Map.find hint_card_state.Tag.played color
                     = Map.find card_state.Tag.played color)
                 | _ -> false)
