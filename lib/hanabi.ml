@@ -22,15 +22,15 @@ let sandbox_command =
       let seed = seedvalue seed in
       printf "Seed: %d\n" seed;
       let state =
-        Game.play (Game_params.standard ~player_count:2) ~seed
-          [ Players.always_play
-          ; Players.always_play ]
+        Game.play (Params.standard ~player_count:2) ~seed
+          [ Game.Player.Intf.auto_player
+          ; Game.Player.Intf.auto_player ]
       in
-      printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state))
+      printf "%s\n%!" (Sexp.to_string (Game.State.sexp_of_t state))
 
-        (*
+(* let () =
  *   let state =
- *     State.create (Game_params.standard ~player_count:2)
+ *     State.create (Params.standard ~player_count:2)
  *     |> fun t -> State.eval_action_exn t (Action.Discard 2)
  *     |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
  *     |> fun (t, _) ->
@@ -148,7 +148,6 @@ let command =
   Command.group ~summary:"Hanabi!"
     [ "sandbox", sandbox_command
     ; "simulate", simulate_command ]
-
 ;;
 
 Exn.handle_uncaught ~exit:true (fun () -> Command.run command)
