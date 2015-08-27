@@ -336,16 +336,9 @@ module State = struct
     in
     let is_invisible card_id = List.mem invisible_cards card_id in
     { t with known_cards = Card_id.Map.filter t.known_cards
-        ~f:(fun ~key:card_id ~data:_ -> not (is_invisible card_id))
-      ; rev_history = List.map t.rev_history ~f:(fun turn ->
-        if not (turn.Turn.who = player)
-        then turn
-        else
-          { turn with
-            Turn. events = List.map turn.Turn.events ~f:(fun event ->
-              match event with
-              | Turn.Draw card_id -> Turn.Draw card_id
-              | _ -> event)})}
+        ~f:(fun ~key:card_id ~data:_ -> not (is_invisible card_id)) }
+
+
 
   let num_played t =
     List.fold (List.map ~f:snd (Color.Map.to_alist t.played_cards)) ~init:0
