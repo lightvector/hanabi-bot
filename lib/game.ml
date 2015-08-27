@@ -336,16 +336,9 @@ module State = struct
     in
     let is_invisible card_id = List.mem invisible_cards card_id in
     { t with known_cards = Card_id.Map.filter t.known_cards
-        ~f:(fun ~key:card_id ~data:_ -> not (is_invisible card_id))
-      ; rev_history = List.map t.rev_history ~f:(fun turn ->
-        if not (turn.Turn.who = player)
-        then turn
-        else
-          { turn with
-            Turn. events = List.map turn.Turn.events ~f:(fun event ->
-              match event with
-              | Turn.Draw card_id -> Turn.Draw card_id
-              | _ -> event)})}
+        ~f:(fun ~key:card_id ~data:_ -> not (is_invisible card_id)) }
+
+
 
   let num_played t =
     List.fold (List.map ~f:snd (Color.Map.to_alist t.played_cards)) ~init:0
@@ -369,8 +362,7 @@ module State = struct
         let hand = Player_id.Map.find_exn t.hands id in
         let hand_str =
           List.map hand ~f:(fun card_id ->
-            let info = Map.find_exn t.card_infos card_id in
-            match info.Card_info.card with
+            match Map.find t.known_cards card_id with
             | None -> "?"
             | Some card ->
               if use_ansi_colors
@@ -390,9 +382,7 @@ module State = struct
     in
     let played_str =
       List.map (Map.data t.played_cards) ~f:(fun cards ->
-        let cards = List.map cards ~f:(fun id ->
-          Option.value_exn (Map.find_exn t.card_infos id).Card_info.card)
-        in
+        let cards = List.map cards ~f:(fun id -> Map.find_exn t.known_cards id) in
         match List.reduce cards ~f:(fun x y ->
           if Number.(>) x.Card.number y.Card.number then x else y)
         with
