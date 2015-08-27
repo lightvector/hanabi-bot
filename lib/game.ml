@@ -369,8 +369,7 @@ module State = struct
         let hand = Player_id.Map.find_exn t.hands id in
         let hand_str =
           List.map hand ~f:(fun card_id ->
-            let info = Map.find_exn t.card_infos card_id in
-            match info.Card_info.card with
+            match Map.find t.known_cards card_id with
             | None -> "?"
             | Some card ->
               if use_ansi_colors
@@ -390,9 +389,7 @@ module State = struct
     in
     let played_str =
       List.map (Map.data t.played_cards) ~f:(fun cards ->
-        let cards = List.map cards ~f:(fun id ->
-          Option.value_exn (Map.find_exn t.card_infos id).Card_info.card)
-        in
+        let cards = List.map cards ~f:(fun id -> Map.find_exn t.known_cards id) in
         match List.reduce cards ~f:(fun x y ->
           if Number.(>) x.Card.number y.Card.number then x else y)
         with
