@@ -22,15 +22,15 @@ let sandbox_command =
       let seed = seedvalue seed in
       printf "Seed: %d\n" seed;
       let state =
-        Game.play (Game_params.standard ~player_count:2) ~seed
+        Game.play (Params.standard ~player_count:2) ~seed
           [ Players.always_play
           ; Players.always_play ]
       in
-      printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state))
+      printf "%s\n%!" (Sexp.to_string (Game.State.sexp_of_t state))
 
-        (*
+(* let () =
  *   let state =
- *     State.create (Game_params.standard ~player_count:2)
+ *     State.create (Params.standard ~player_count:2)
  *     |> fun t -> State.eval_action_exn t (Action.Discard 2)
  *     |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
  *     |> fun (t, _) ->
@@ -84,8 +84,8 @@ let simulate_command =
           | Some player -> (name,player))
         |> Queue.of_list
       in
-      let game_params = Game_params.standard ~player_count:(Queue.length player_queue) in
-      let max_score = Game_params.max_score game_params in
+      let game_params = Params.standard ~player_count:(Queue.length player_queue) in
+      let max_score = Params.max_score game_params in
       let score_freqs = Array.create ~len:(max_score+1) 0 in
       let played_freqs = Array.create ~len:(max_score+1) 0 in
       for i = 0 to num_games - 1 do
@@ -148,7 +148,6 @@ let command =
   Command.group ~summary:"Hanabi!"
     [ "sandbox", sandbox_command
     ; "simulate", simulate_command ]
-
 ;;
 
 Exn.handle_uncaught ~exit:true (fun () -> Command.run command)
