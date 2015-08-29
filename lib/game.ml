@@ -174,7 +174,11 @@ module State = struct
   (* GAMEPLAY *)
 
   let turn_of_action_exn t action =
-    assert (is_definitely_legal_exn t action);
+    if not (is_definitely_legal_exn t action)
+    then failwith (
+      Sexp.to_string (Action.sexp_of_t action)
+      ^ "\n"
+      ^ Sexp.to_string (sexp_of_t t));
     let card_details_of_index i =
       let card_id = List.nth_exn (Player_id.Map.find_exn t.hands t.cur_player) i in
       let card = card_exn t card_id in

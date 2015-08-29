@@ -44,6 +44,8 @@ module Card : sig
     }
   with sexp
 
+  val (=): t -> t -> bool
+
   val to_string: t -> string
   val to_ansicolor_string: t -> string
 end

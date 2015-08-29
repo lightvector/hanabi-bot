@@ -1,6 +1,8 @@
 open Core.Std
 open Hanabi_types
 
+open Int.Replace_polymorphic_compare
+
 module Tag = struct
   type card_state =
     { played : Number.t Color.Map.t
@@ -17,6 +19,14 @@ module Tag = struct
   with sexp
 end
 
+let card_exn ~message game_state card_id =
+  try Game.State.card_exn game_state card_id with
+  | _ -> failwith message
+
+let find_exn ~message map key =
+  try Map.find_exn map key with
+  | _ -> failwith message
+
 let card_state_of_game_state game_state =
   let played =
     Map.map game_state.Game.State.played_cards ~f:(fun l ->
@@ -24,7 +34,7 @@ let card_state_of_game_state game_state =
   in
   let discarded =
     List.map game_state.Game.State.discarded_cards
-      ~f:(Game.State.card_exn game_state)
+      ~f:(card_exn ~message:"1" game_state)
   in
   { Tag. played; discarded }
 
@@ -34,23 +44,25 @@ let playable_number_of_color card_state color =
   | Some n -> Number.next n
 
 let is_playable card_state card =
-  card.Card.number = playable_number_of_color card_state card.Card.color
+  Number.(=) card.Card.number (playable_number_of_color card_state card.Card.color)
 
 let is_eventually_playable game_state card =
+  printf "called is_eventually_playable\n";
   let card_state = card_state_of_game_state game_state in
   let { Card. color; number } = card in
-  let last_played = Map.find_exn card_state.Tag.played color in
+  let last_played = Map.find card_state.Tag.played color in
   let init =
     match game_state.Game.State.params.Game.Params.deck_params with
     | Game.Deck_params.Symmetric (map, _colors) ->
-      Array.init (Map.length map) ~f:(fun i -> Map.find_exn map (Number.of_int (i + 1)))
+      Array.init (Map.length map) ~f:(fun i ->
+        Map.find_exn map (Number.of_int (i + 1)))
     | _ -> assert false
   in
-  Number.(>) number last_played
+  (Option.value_map ~default:true last_played ~f:(Number.(>) number))
   && begin
     let left_to_play =
       List.fold card_state.Tag.discarded ~init ~f:(fun left card ->
-        if card.Card.color = color
+        if Color.(=) card.Card.color color
         then left.((Number.to_int card.Card.number) - 1) <-
           left.((Number.to_int card.Card.number) - 1) - 1;
         left)
@@ -63,6 +75,7 @@ let is_eventually_playable game_state card =
   end
 
 let is_danger game_state card =
+  printf "called is_danger\n";
   let card_state = card_state_of_game_state game_state in
   is_eventually_playable game_state card
   && begin
@@ -74,7 +87,7 @@ let is_danger game_state card =
     in
     List.fold card_state.Tag.discarded ~init:discards_needed
       ~f:(fun discards_needed discard ->
-        if card = discard
+        if Card.(=) card discard
         then discards_needed - 1
         else discards_needed) = 0
   end
@@ -115,7 +128,7 @@ let update_state game_state state turn =
       else
         Map.fold game_state.Game.State.hands ~init:tags
           ~f:(fun ~key:player_id ~data:card_ids tags ->
-            if who = player_id
+            if Player_id.(=) who player_id
             then tags
             else
               let card_state = card_state_of_game_state game_state in
@@ -136,6 +149,7 @@ let update_state game_state state turn =
     | Game.Turn.Hint hint ->
       let { Hint. target; hint; hand_indices } = hint in
       let card_state = card_state_of_game_state game_state in
+      printf "%s\n" (Sexp.to_string (Tag.sexp_of_card_state card_state));
       let hand = Map.find_exn game_state.Game.State.hands target in
       let tags,_ =
         List.foldi ~init:(tags,0) hand
@@ -185,7 +199,7 @@ let find_new_history me rev_history =
     match rev_history with
     | [] -> acc
     | turn :: rest ->
-      if turn.Game.Turn.who = me
+      if Player_id.(=) turn.Game.Turn.who me
       then turn :: acc
       else loop (turn :: acc) rest
   in
@@ -193,14 +207,28 @@ let find_new_history me rev_history =
 
 let first_some_from_other_players ~player_count ~me ~f =
   let rec loop player =
-    match f player with
-    | None ->
-      if Player_id.(=) player me
-      then None
-      else loop (Player_id.next ~player_count player)
-    | Some x -> Some x
+    if Player_id.(=) player me
+    then None
+    else
+      match f player with
+      | None ->
+        loop (Player_id.next ~player_count player)
+      | Some x -> Some x
   in
   loop (Player_id.next ~player_count me)
+
+let tag_is_hinted_as_danger tag ~hand_size =
+  match tag with
+  | Tag.Hinted (_, _, indices, _) ->
+    Int.Set.min_elt_exn indices = hand_size - 1
+  | _ -> false
+
+let tag_is_hinted_as_playable tag ~hand_size =
+  match tag with
+  | Tag.Hinted (_, _, indices, hint_index) ->
+    not (Int.Set.min_elt_exn indices = hand_size - 1)
+    && hint_index = 0
+  | _ -> false
 
 let act state game_state =
   let { Game.State. params; hints_left; known_cards; hands; rev_history; _ } =
@@ -221,17 +249,19 @@ let act state game_state =
           match hint_opt with
           | Some hint -> Some hint
           | None ->
-            let card = Game.State.card_exn game_state card_id in
+            let message =
+              Sexp.to_string (Card_id.sexp_of_t card_id)
+              ^ "\n"
+              ^ (Sexp.to_string (Game.State.sexp_of_t game_state))
+            in
+            let card = card_exn ~message game_state card_id in
             if not (is_playable card_state card)
             then None
             else
               let already_hinted =
-                Option.value ~default:[] (Map.find tags card_id)
-                |> List.exists ~f:(function
-                  | Tag.Hinted (_, _, indices, hint_index) ->
-                    (hint_index = 0
-                    && indices <> Int.Set.singleton (hand_size - 1))
-                  | _ -> false)
+                let card_tags = Option.value ~default:[] (Map.find tags card_id) in
+                List.exists card_tags ~f:(tag_is_hinted_as_playable ~hand_size)
+                || (List.count card_tags ~f:(tag_is_hinted_as_danger ~hand_size)) > 1
               in
               if already_hinted
               then None
@@ -248,31 +278,30 @@ let act state game_state =
   | Some hint -> Action.Hint hint
   | None ->
     let hint_dangerous_opt =
-      first_some_from_other_players ~player_count ~me ~f:(fun other_player ->
-        let hand = Map.find_exn hands other_player in
-        let last_card_id = List.last_exn hand in
-        let last_card = Game.State.card_exn game_state last_card_id in
-        if not (is_danger game_state last_card)
-        then None
-        else
-          let already_hinted =
-            Option.value ~default:[] (Map.find tags last_card_id)
-            |> List.exists ~f:(function
-              | Tag.Hinted (_, _, indices, hint_index) ->
-                (hint_index = 0
-                && indices = Int.Set.singleton (hand_size - 1))
-              | _ -> false)
-          in
-          if already_hinted
+      if hints_left = 0
+      then None
+      else
+        first_some_from_other_players ~player_count ~me ~f:(fun other_player ->
+          let hand = Map.find_exn hands other_player in
+          let last_card_id = List.last_exn hand in
+          let last_card = card_exn ~message:"3" game_state last_card_id in
+          if not (is_danger game_state last_card)
           then None
           else
-            List.filter (Game.State.all_legal_hints game_state hand)
-              ~f:(fun (hint, indices) ->
-                Int.Set.min_elt_exn indices = (hand_size - 1))
-            |> List.hd
-            |> Option.map ~f:(fun (hint, hand_indices) ->
-              { Hint. target = other_player; hint; hand_indices })
-      )
+            let already_hinted =
+              Option.value ~default:[] (Map.find tags last_card_id)
+              |> List.exists ~f:(tag_is_hinted_as_danger ~hand_size)
+            in
+            if already_hinted
+            then None
+            else
+              List.filter (Game.State.all_legal_hints game_state hand)
+                ~f:(fun (hint, indices) ->
+                  Int.Set.min_elt_exn indices = (hand_size - 1))
+              |> List.hd
+              |> Option.map ~f:(fun (hint, hand_indices) ->
+                { Hint. target = other_player; hint; hand_indices })
+        )
     in
     match hint_dangerous_opt with
     | Some hint -> Action.Hint hint
@@ -311,8 +340,7 @@ let act state game_state =
                 else if List.exists card_tags ~f:(fun card_tag ->
                   match card_tag with
                   | Tag.Hinted (hint_card_state, hint, indices, hint_index) ->
-                    hint_index = 0
-                    && (indices <> Int.Set.singleton (hand_size - 1))
+                    tag_is_hinted_as_danger card_tag ~hand_size
                     && (match hint with
                     | Hint.Number number ->
                       let impossible_colors =
@@ -328,7 +356,7 @@ let act state game_state =
                       let possible_colors =
                         Map.fold hint_card_state.Tag.played ~init:[]
                           ~f:(fun ~key:color ~data acc ->
-                            if Number.next data = number
+                            if Number.(=) (Number.next data) number
                             then color :: acc
                             else acc)
                         |> List.filter ~f:(fun c -> not (List.mem impossible_colors c))
@@ -336,12 +364,12 @@ let act state game_state =
                       List.exists possible_colors ~f:(fun color ->
                         match Map.find card_state.Tag.played color with
                         | None -> true
-                        | Some n -> Number.next n = number)
+                        | Some n -> Number.(=) (Number.next n) number)
                     | Hint.Color color ->
                       let implied_number =
                         playable_number_of_color hint_card_state color
                       in
-                      (implied_number = playable_number_of_color card_state color)
+                      Number.(=) implied_number (playable_number_of_color card_state color)
                       && not (List.exists card_tags ~f:(function
                       | Tag.Anti_hinted (_, hint) -> begin
                         match hint with
@@ -391,8 +419,6 @@ let act state game_state =
               match Map.find tags last_card with
               | None -> Action.Discard (hand_size - 1)
               | Some card_tags ->
-                if List.exists card_tags ~f:(function
-                | Tag.Hinted (_, _, l, 0) -> l = Int.Set.singleton (hand_size - 1)
-                | _ -> false)
+                if List.exists card_tags ~f:(tag_is_hinted_as_danger ~hand_size)
                 then Action.Discard (hand_size - 2)
                 else Action.Discard (hand_size - 1)

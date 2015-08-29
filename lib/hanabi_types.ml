@@ -55,6 +55,10 @@ module Card = struct
     }
   with sexp
 
+  let (=) a b =
+    Color.(=) a.color b.color
+    && Number.(=) a.number b.number
+
   let to_string t =
     Color.to_string t.color ^ Number.to_string t.number
 
