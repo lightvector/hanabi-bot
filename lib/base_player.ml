@@ -440,5 +440,4 @@ let act state game_state =
             then Some (Action.Discard (hand_size - 2))
             else Some (Action.Discard (hand_size - 1))
         end
-  end
-      |> fun action_opt ->  Option.value_exn action_opt
+  end |> fun action_opt ->  Option.value_exn action_opt
