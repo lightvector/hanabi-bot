@@ -47,7 +47,6 @@ let is_playable card_state card =
   Number.(=) card.Card.number (playable_number_of_color card_state card.Card.color)
 
 let is_eventually_playable game_state card =
-  printf "called is_eventually_playable\n";
   let card_state = card_state_of_game_state game_state in
   let { Card. color; number } = card in
   let last_played = Map.find card_state.Tag.played color in
@@ -75,7 +74,6 @@ let is_eventually_playable game_state card =
   end
 
 let is_danger game_state card =
-  printf "called is_danger\n";
   let card_state = card_state_of_game_state game_state in
   is_eventually_playable game_state card
   && begin
@@ -149,7 +147,6 @@ let update_state game_state state turn =
     | Game.Turn.Hint hint ->
       let { Hint. target; hint; hand_indices } = hint in
       let card_state = card_state_of_game_state game_state in
-      printf "%s\n" (Sexp.to_string (Tag.sexp_of_card_state card_state));
       let hand = Map.find_exn game_state.Game.State.hands target in
       let tags,_ =
         List.foldi ~init:(tags,0) hand
@@ -334,13 +331,14 @@ let act state game_state =
               | None -> None
               | Some card_tags ->
                 if List.exists card_tags ~f:(function
+                (* these have already been considered in above code *)
                 | Tag.Identified _ -> true
                 | _ -> false)
                 then None
                 else if List.exists card_tags ~f:(fun card_tag ->
                   match card_tag with
                   | Tag.Hinted (hint_card_state, hint, indices, hint_index) ->
-                    tag_is_hinted_as_danger card_tag ~hand_size
+                    tag_is_hinted_as_playable card_tag ~hand_size
                     && (match hint with
                     | Hint.Number number ->
                       let impossible_colors =

@@ -24,7 +24,7 @@ let sandbox_command =
       let state =
         Game.play (Params.standard ~player_count:2) ~seed
           [ Players.base_player
-          ; Players.always_play ]
+          ; Players.base_player ]
       in
       printf "%s\n%!" (Sexp.to_string (Game.State.sexp_of_t state))
 
