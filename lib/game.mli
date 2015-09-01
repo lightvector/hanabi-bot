@@ -105,7 +105,7 @@ end
 module Player : sig
   module Intf : sig
     type 'a t =
-      { create : (Player_id.t -> seed:int -> 'a)
+      { create : (Player_id.t -> params:Params.t -> seed:int -> 'a)
       ; act : ('a -> State.t -> Action.t)
       }
 

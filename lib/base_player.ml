@@ -92,6 +92,7 @@ module State = struct
   type t =
     { me : Player_id.t
     ; tags : Tag.t list Card_id.Map.t
+    ; game_state : Game.State.t
     } with sexp
 end
 
@@ -103,23 +104,20 @@ let was_hinted state card_id =
     | Tag.Hinted _ -> true
     | _ -> false)
 
-let update_state game_state state turn =
+let update_state state turn =
   let { Game.Turn. who; events } = turn in
-  let { State. me; tags } = state in
+  let { State. me; tags; game_state } = state in
+
   let assign_tags_of_event tags event =
     match event with
     | Game.Turn.Draw _ | Game.Turn.Play _ -> tags
     | Game.Turn.Discard _ ->
       let couldve_hinted =
-        (* BUG hints left is at the end! *)
         game_state.Game.State.hints_left > 0
       in
       if not couldve_hinted
       then tags
       else
-        (* BUG? - hands is the final hand state?
-           Same for card_state and all the other uses of game_state?
-        *)
         Map.fold game_state.Game.State.hands ~init:tags
           ~f:(fun ~key:player_id ~data:card_ids tags ->
             if Player_id.(=) who player_id
@@ -132,19 +130,15 @@ let update_state game_state state turn =
               let unhinted_back = not (was_hinted state back) in
               let tags =
                 if unhinted_front
-                then begin
-                  printf "added Unhinted_front\n";
+                then
                   Map.add_multi tags ~key:front
                     ~data:(Tag.Unhinted_front card_state)
-                end
                 else tags
               in
               if unhinted_back
-              then begin
-                printf "added Unhinted_back\n";
+              then
                 Map.add_multi tags ~key:back
                   ~data:(Tag.Unhinted_back card_state)
-              end
               else tags)
     | Game.Turn.Hint hint ->
       let { Hint. target; hint; hand_indices } = hint in
@@ -154,12 +148,10 @@ let update_state game_state state turn =
         List.foldi ~init:(tags,0) hand
           ~f:(fun hand_index (tags, hint_index) card_id ->
             if not (Set.mem hand_indices hand_index)
-            then begin
-              printf "added Anti_hinted\n";
+            then
               Map.add_multi tags ~key:card_id
                 ~data:(Tag.Anti_hinted (card_state, hint)),
               hint_index
-            end
             else
               let identified_as =
                 Option.bind (Map.find tags card_id) (fun card_tags ->
@@ -181,10 +173,8 @@ let update_state game_state state turn =
                 match identified_as with
                 | None -> tags
                 | Some card ->
-                  printf "added Identified\n";
                   Map.add_multi tags ~key:card_id ~data:(Tag.Identified card)
               in
-              printf "added Hinted\n";
               Map.add_multi tags ~key:card_id
                 ~data:(Tag.Hinted (card_state, hint, hand_indices, hint_index)),
               hint_index + 1)
@@ -192,22 +182,26 @@ let update_state game_state state turn =
       tags
   in
   let tags = List.fold ~init:tags events ~f:assign_tags_of_event in
-  { State. me; tags }
+  let game_state = Game.State.eval_turn_exn game_state turn in
+  { State. me; tags; game_state }
 
-let create player_id =
+let create player_id ~params ~seed =
   { State. me = player_id
-  ; tags = Card_id.Map.empty }
+  ; tags = Card_id.Map.empty
+  ; game_state = Game.State.create params ~seed}
 
-let find_new_history me ~rev_history =
-  let rec loop acc rev_history =
-    match rev_history with
-    | [] -> acc
-    | turn :: rest ->
-      if Player_id.(=) turn.Game.Turn.who me
-      then turn :: acc
-      else loop (turn :: acc) rest
+let find_new_history ~my_rev_history ~rev_history =
+  let prefix_length = List.length rev_history - List.length my_rev_history in
+  let rec loop i acc rev_history =
+    if i = 0
+    then acc
+    else
+      match rev_history with
+      | [] -> assert false
+      | turn :: rest ->
+        loop (i - 1) (turn :: acc) rest
   in
-  loop [] rev_history
+  loop prefix_length [] rev_history
 
 let first_some_from_other_players ~player_count ~me ~f =
   let rec loop player =
@@ -381,10 +375,11 @@ let act state game_state =
     game_state
   in
   let { Game.Params. deck_params; player_count; hand_size; _ } = params in
-  let new_history = find_new_history state.State.me ~rev_history in
-  printf "new turn\n";
-  let state = List.fold ~init:state new_history ~f:(update_state game_state) in
-  let { State. tags; me } = state in
+  let new_history = find_new_history ~my_rev_history:state.State.game_state.Game.State.rev_history
+    ~rev_history
+  in
+  let state = List.fold ~init:state new_history ~f:update_state in
+  let { State. tags; me; _ } = state in
   begin
     begin
       let hint_playable_opt =

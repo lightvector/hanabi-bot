@@ -415,7 +415,7 @@ end
 module Player = struct
   module Intf = struct
     type 'a t =
-      { create : (Player_id.t -> seed:int -> 'a)
+      { create : (Player_id.t -> params:Params.t -> seed:int -> 'a)
       ; act : ('a -> State.t -> Action.t)
       }
 
@@ -432,7 +432,7 @@ let play params players ~seed =
   let players =
     List.mapi players ~f:(fun i (Player.Intf.T intf) ->
       let player_id = Player_id.of_int i in
-      Player.T (player_id, intf.Player.Intf.create player_id ~seed, intf))
+      Player.T (player_id, intf.Player.Intf.create player_id ~params ~seed, intf))
     |> Queue.of_list
   in
   let state = State.create params ~seed in

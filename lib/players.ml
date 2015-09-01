@@ -3,12 +3,12 @@ open Hanabi_types
 open Game
 
 let always_play =
-  let create _player_id ~seed:_ = () in
+  let create _player_id ~params:_ ~seed:_ = () in
   let act () _state = Action.Play 0 in
   Player.Intf.T { Player.Intf.create; act }
 
 let base_player =
-  let create player_id ~seed:_ = Base_player.create player_id in
+  let create = Base_player.create in
   let act = Base_player.act in
   Player.Intf.T { Player.Intf.create; act }
 
