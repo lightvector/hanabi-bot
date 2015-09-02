@@ -35,6 +35,7 @@ module Params : sig
   type t = private
     (* we could remove this and use number_distribution below if we want all colors to have the same distribution *)
     { deck_params: Deck_params.t
+    ; colors : Color.Set.t
     ; initial_hints: int
     ; max_hints: int
     ; bombs_before_loss: int
@@ -66,6 +67,7 @@ module State : sig
     ; final_turns_left: int (* The # of turns left in the game when the deck is empty *)
     ; num_played: int
     ; played_cards: Card_id.t list Color.Map.t
+    ; playable_numbers: Number.t Color.Map.t
     ; discarded_cards: Card_id.t list
     ; known_cards: Card.t Card_id.Map.t
     ; hands: Card_id.t list Player_id.Map.t
@@ -81,6 +83,9 @@ module State : sig
   val score : t -> int
 
   val card_exn : t -> Card_id.t -> Card.t
+  val is_playable_exn : t -> Card.t -> bool
+  val are_playable_in_order_exn : t -> Card.t list -> bool
+
   val all_legal_hints : t -> Card_id.t list -> (Hint.hint * Int.Set.t) list
 
   val display_string :

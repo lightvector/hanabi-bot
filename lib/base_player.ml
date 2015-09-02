@@ -5,7 +5,7 @@ open Int.Replace_polymorphic_compare
 
 module Tag = struct
   type card_state =
-    { played : Number.t Color.Map.t
+    { playable : Number.t Color.Map.t
     ; discarded : Card.t list
     } with sexp
 
@@ -20,20 +20,15 @@ module Tag = struct
 end
 
 let card_state_of_game_state game_state =
-  let played =
-    Map.map game_state.Game.State.played_cards ~f:(fun l ->
-      Number.of_int (List.length l))
-  in
+  let playable = game_state.Game.State.playable_numbers in
   let discarded =
     List.map game_state.Game.State.discarded_cards
       ~f:(Game.State.card_exn game_state)
   in
-  { Tag. played; discarded }
+  { Tag. playable; discarded }
 
 let playable_number_of_color card_state color =
-  match Map.find card_state.Tag.played color with
-  | None -> Number.of_int 1
-  | Some n -> Number.next n
+  Map.find_exn card_state.Tag.playable color
 
 let is_playable card_state card =
   Number.(=) card.Card.number (playable_number_of_color card_state card.Card.color)
@@ -41,7 +36,7 @@ let is_playable card_state card =
 let is_eventually_playable game_state card =
   let card_state = card_state_of_game_state game_state in
   let { Card. color; number } = card in
-  let last_played = Map.find card_state.Tag.played color in
+  let playable = Map.find card_state.Tag.playable color in
   let init =
     match game_state.Game.State.params.Game.Params.deck_params with
     | Game.Deck_params.Symmetric (map, _colors) ->
@@ -49,7 +44,7 @@ let is_eventually_playable game_state card =
         Map.find_exn map (Number.of_int (i + 1)))
     | _ -> assert false
   in
-  (Option.value_map ~default:true last_played ~f:(Number.(>) number))
+  (Option.value_map ~default:true playable ~f:(Number.(>=) number))
   && begin
     let left_to_play =
       List.fold card_state.Tag.discarded ~init ~f:(fun left card ->
@@ -304,17 +299,25 @@ let find_identified_play game_state state ~my_hand =
         then Some i
         else None)
 
+let find_mapi list ~f =
+  let rec loop i l =
+    match l with
+    | [] -> None
+    | hd :: tl ->
+      match f i hd with
+      | Some y -> Some y
+      | None -> loop (i + 1) tl
+  in
+  loop 0 list
+
 let find_hinted_play game_state state ~my_hand =
   let card_state = card_state_of_game_state game_state in
   let { State. tags; _ } = state in
   let hand_size = game_state.Game.State.params.Game.Params.hand_size in
-  List.foldi my_hand ~init:None ~f:(fun i play_opt card_id ->
-    if Option.is_some play_opt
-    then play_opt
-    else
-      match Map.find tags card_id with
-      | None -> None
-      | Some card_tags ->
+  find_mapi my_hand ~f:(fun i card_id ->
+    match Map.find tags card_id with
+    | None -> None
+    | Some card_tags ->
         if List.exists card_tags ~f:(function
         (* these have already been considered in 'identified' code above *)
         | Tag.Identified _ -> true
@@ -339,17 +342,15 @@ let find_hinted_play game_state state ~my_hand =
                         | _ -> None)
                     in
                     let possible_colors =
-                      Map.fold hint_card_state.Tag.played ~init:[]
+                      Map.fold hint_card_state.Tag.playable ~init:[]
                         ~f:(fun ~key:color ~data acc ->
-                          if Number.(=) (Number.next data) number
+                          if Number.(=) data number
                           then color :: acc
                           else acc)
                       |> List.filter ~f:(fun c -> not (List.mem impossible_colors c))
                     in
                     List.exists possible_colors ~f:(fun color ->
-                      match Map.find card_state.Tag.played color with
-                      | None -> true
-                      | Some n -> Number.(=) (Number.next n) number)
+                      Number.(=) (Map.find_exn card_state.Tag.playable color) number)
                   | Hint.Color color ->
                     let implied_number =
                       playable_number_of_color hint_card_state color

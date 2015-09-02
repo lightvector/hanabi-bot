@@ -14,6 +14,8 @@ module Color : sig
   val default_5: t list
   val rainbow_6: t list
 
+  val all: t list
+
   val to_string: t -> string
 end
 
