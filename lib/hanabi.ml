@@ -23,8 +23,8 @@ let sandbox_command =
       printf "Seed: %d\n" seed;
       let state =
         Game.play (Params.standard ~player_count:2) ~seed
-          [ Players.always_play
-          ; Players.always_play ]
+          [ Players.base_player
+          ; Players.base_player ]
       in
       printf "%s\n%!" (Sexp.to_string (Game.State.sexp_of_t state))
 
@@ -85,7 +85,7 @@ let simulate_command =
         |> Queue.of_list
       in
       let game_params = Params.standard ~player_count:(Queue.length player_queue) in
-      let max_score = Params.max_score game_params in
+      let max_score = game_params.Params.max_score in
       let score_freqs = Array.create ~len:(max_score+1) 0 in
       let played_freqs = Array.create ~len:(max_score+1) 0 in
       for i = 0 to num_games - 1 do
@@ -122,7 +122,7 @@ let simulate_command =
           printf "%s\n%!" (State.display_string !state ~use_ansi_colors);
         end;
         let score = State.score final_state in
-        let num_played = State.num_played final_state in
+        let num_played = final_state.State.num_played in
         score_freqs.(score) <- score_freqs.(score) + 1;
         played_freqs.(num_played) <- played_freqs.(num_played) + 1;
       done;

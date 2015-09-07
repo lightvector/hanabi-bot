@@ -13,24 +13,30 @@ module Color : sig
 
   val default_5: t list
   val rainbow_6: t list
+
   val all: t list
 
   val to_string: t -> string
 end
 
 module Number : sig
-  type t = int
+  type t
   with sexp, compare
   include Comparable.S with type t := t
 
   val to_int: t -> int
   val of_int: int -> t
+  val to_string: t -> string
 
   val first: t
   val next: t -> t
+  val max: t -> t -> t
 
-  val all: t list
-  val to_string: t -> string
+  val is_first: t -> bool
+  val is_after: t -> after:t -> bool
+  val diff: t -> t -> int
+
+  val all: num_numbers:int -> t list
 end
 
 module Card : sig
@@ -40,23 +46,30 @@ module Card : sig
     }
   with sexp
 
+  val (=): t -> t -> bool
+
   val to_string: t -> string
   val to_ansicolor_string: t -> string
 end
 
 (* An id for a player, unique per game *)
 module Player_id : sig
-  type t = int
+  type t
   with sexp, compare
   include Comparable.S with type t := t
 
   val to_int: t -> int
   val of_int: int -> t
+
+  val first: t
+  val next: t -> player_count:int -> t
+  val all: player_count:int -> t list
+  val is_legal: t -> player_count:int -> bool
 end
 
 (* An id for a card, unique per game *)
 module Card_id : sig
-  type t = int
+  type t
   with sexp, compare
   include Comparable.S with type t := t
 
@@ -73,7 +86,7 @@ module Hint : sig
   type t =
     { target: Player_id.t
     ; hint: hint
-    ; hand_indices: int list
+    ; hand_indices: Int.Set.t
     }
   with sexp
 end

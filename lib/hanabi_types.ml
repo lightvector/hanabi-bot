@@ -31,16 +31,21 @@ end
 
 module Number = struct
   include Int
-
-  let min_value = 1
-  let max_value = 5
-  let all = [ 1; 2; 3; 4; 5 ]
-  let first = 1
-  let next t = t + 1
-
   let to_int = Fn.id
   let of_int = Fn.id
   let to_string = Int.to_string
+  let min_value = 1
+  let max_value = 5
+
+  let first = 1
+  let next t = t + 1
+  let max = Int.max
+
+  let is_first t = t = 1
+  let is_after t ~after = t = after + 1
+  let diff t0 t1 = t0 - t1
+
+  let all ~num_numbers = List.init num_numbers ~f:(fun x -> x + 1)
 end
 
 module Card = struct
@@ -49,6 +54,10 @@ module Card = struct
     ; number : Number.t
     }
   with sexp
+
+  let (=) a b =
+    Color.(=) a.color b.color
+    && Number.(=) a.number b.number
 
   let to_string t =
     Color.to_string t.color ^ Number.to_string t.number
@@ -71,6 +80,11 @@ module Player_id = struct
   include Int
   let to_int = Fn.id
   let of_int = Fn.id
+
+  let first = 0
+  let next t ~player_count = (t + 1) mod player_count
+  let all ~player_count = List.init player_count ~f:Fn.id
+  let is_legal t ~player_count = t >= 0 && t < player_count
 end
 
 module Card_id = struct
@@ -88,7 +102,7 @@ module Hint = struct
   type t =
     { target: Player_id.t
     ; hint: hint
-    ; hand_indices: int list
+    ; hand_indices: Int.Set.t
     }
   with sexp
 end
