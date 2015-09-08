@@ -4,8 +4,8 @@ open Hanabi_types
 module Turn : sig
   type event =
     | Hint of Hint.t
-    | Discard of int * Card_id.t * Card.t
-    | Play of int * Card_id.t * Card.t
+    | Discard of int * Card_id.t (* int = hand idx *)
+    | Play of int * Card_id.t * bool (* int = hand_idx, bool = was_playable *)
     | Draw of Card_id.t
   with sexp
 
@@ -47,6 +47,7 @@ module Params : sig
     ; player_count: int
     ; hand_size: int
     ; max_score: int
+    ; max_discards: int
     }
   with sexp
 
@@ -66,31 +67,47 @@ module State : sig
     ; hints_left: int
     ; final_turns_left: int (* The # of turns left in the game when the deck is empty *)
     ; num_played: int
-    ; played_cards: Card_id.t list Color.Map.t
-    ; playable_numbers: Number.t Color.Map.t
+    ; played_cards: Card_id.t list
+    ; playable_numbers: Number.t Color.Map.t   (* keys have full domain *)
     ; discarded_cards: Card_id.t list
     ; known_cards: Card.t Card_id.Map.t
-    ; hands: Card_id.t list Player_id.Map.t
+    ; hands: Card_id.t list Player_id.Map.t    (* keys have full domain *)
     ; rev_history: Turn.t list
     ; cur_player: Player_id.t
     } with sexp
 
   val create : Params.t -> seed:int -> t
 
+  (* State updating -------------------------------------------------- *)
+
+  (* Does not check legality, just plays the effect of the turn *)
   val eval_turn_exn : t -> Turn.t -> t
-  val eval_action_exn : t -> Action.t -> t * Turn.t
+  (* Checks for legality. Evaluating the play of an unknown card is allowed if
+     playableIfUnknown is specified, but will not not update [playable_numbers]. *)
+  val eval_action_exn : ?playableIfUnknown:bool -> t -> Action.t -> t * Turn.t
 
-  val score : t -> int
+  (* Utility functions -------------------------------------------------- *)
 
+  (* Known card lookup *)
+  val card : t -> Card_id.t -> Card.t option
   val card_exn : t -> Card_id.t -> Card.t
-  val is_playable_exn : t -> Card.t -> bool
-  val are_playable_in_order_exn : t -> Card.t list -> bool
+
+  (* Current game stats *)
+  val score : t -> int
+  val discards_left : t -> int (* discards left for perfect score *)
+
+  (* Higher-level card properties *)
+  val is_playable : t -> Card.t -> bool
+  val is_useless: t -> Card.t -> bool (* provably nonplayable *)
+  val are_playable_in_order : t -> Card.t list -> bool
 
   val all_legal_hints : t -> Card_id.t list -> (Hint.hint * Int.Set.t) list
 
-  val display_string :
-    ?use_ansi_colors:bool -> t -> string
-  (* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
+  val display_string : ?use_ansi_colors:bool -> t -> string
+  val turn_display_string : ?use_ansi_colors:bool -> t -> Turn.t -> string
+
+
+(* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
   (* val is_definitely_legal_exn: 'a t -> Action.t -> bool
    *
    * (\* Return all definitely-legal hints *\)

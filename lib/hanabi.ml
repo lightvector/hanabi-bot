@@ -114,8 +114,9 @@ let simulate_command =
             (* Exclude the initial card draws that occur when the state is created fresh *)
             if i >= List.length !state.State.rev_history
             then begin
-              printf "%s\n" (State.display_string !state ~use_ansi_colors);
-              printf "%s\n" (Turn.to_string turn);
+              printf "%s  %s\n"
+                (State.display_string !state ~use_ansi_colors)
+                (State.turn_display_string !state turn ~use_ansi_colors);
               state := State.eval_turn_exn !state turn
             end
           );

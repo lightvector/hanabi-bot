@@ -53,7 +53,7 @@ module Card = struct
     { color : Color.t
     ; number : Number.t
     }
-  with sexp
+  with sexp, compare
 
   let (=) a b =
     Color.(=) a.color b.color
