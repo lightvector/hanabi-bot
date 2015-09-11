@@ -37,6 +37,7 @@ module Number : sig
   val diff: t -> t -> int
 
   val all: num_numbers:int -> t list
+  val between: min:t -> max:t -> t list
 end
 
 module Card : sig
@@ -44,7 +45,8 @@ module Card : sig
     { color : Color.t
     ; number : Number.t
     }
-  with sexp
+  with sexp, compare
+  include Comparable.S with type t := t
 
   val (=): t -> t -> bool
 
@@ -75,6 +77,7 @@ module Card_id : sig
 
   val to_int: t -> int
   val of_int: int -> t
+  val all: deck: _ list -> t list
 end
 
 module Hint : sig
