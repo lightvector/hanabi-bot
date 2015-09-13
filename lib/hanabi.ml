@@ -22,7 +22,7 @@ let sandbox_command =
       let seed = seedvalue seed in
       printf "Seed: %d\n" seed;
       let state =
-        Game.play (Params.standard ~player_count:2) ~seed
+        Game.play (Params.standard ~player_count:2) ~seed ~f:(fun ~old:_ _state _turn -> ())
           [ Players.base_player
           ; Players.base_player ]
       in
@@ -104,23 +104,16 @@ let simulate_command =
 
         let players = List.map players ~f:snd in
         let seed = hash seed i in
-        let final_state = Game.play game_params ~seed players in
-        let history = List.rev final_state.State.rev_history in
-
-        let state = ref (State.create game_params ~seed) in
+        let final_state = Game.play game_params ~seed players ~f:(fun ~old state turn ->
+          if print_games
+          then printf "%s  %s\n"
+            (State.display_string state ~use_ansi_colors)
+            (State.turn_display_string state turn ~use_ansi_colors);
+        )
+        in
         if print_games
-        then begin
-          List.iteri history ~f:(fun i turn ->
-            (* Exclude the initial card draws that occur when the state is created fresh *)
-            if i >= List.length !state.State.rev_history
-            then begin
-              printf "%s\n" (State.display_string !state ~use_ansi_colors);
-              printf "%s\n" (Turn.to_string turn);
-              state := State.eval_turn_exn !state turn
-            end
-          );
-          printf "%s\n%!" (State.display_string !state ~use_ansi_colors);
-        end;
+        then printf "%s\n%!" (State.display_string final_state ~use_ansi_colors);
+
         let score = State.score final_state in
         let num_played = final_state.State.num_played in
         score_freqs.(score) <- score_freqs.(score) + 1;

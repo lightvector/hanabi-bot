@@ -4,8 +4,8 @@ open Hanabi_types
 module Turn : sig
   type event =
     | Hint of Hint.t
-    | Discard of int * Card_id.t * Card.t
-    | Play of int * Card_id.t * Card.t
+    | Discard of int * Card_id.t (* int = hand idx *)
+    | Play of int * Card_id.t * bool (* int = hand_idx, bool = was_playable *)
     | Draw of Card_id.t
   with sexp
 
@@ -36,6 +36,7 @@ module Params : sig
     (* we could remove this and use number_distribution below if we want all colors to have the same distribution *)
     { deck_params: Deck_params.t
     ; colors : Color.Set.t
+    ; max_number: Number.t
     ; initial_hints: int
     ; max_hints: int
     ; bombs_before_loss: int
@@ -47,17 +48,21 @@ module Params : sig
     ; player_count: int
     ; hand_size: int
     ; max_score: int
+    ; max_discards: int
     }
   with sexp
 
   val standard: player_count:int -> t
+
+  val hint_matches_card: t -> Hint.hint -> Card.t -> bool
 end
 
 (* An instance of the game state.
    Capable of representing game states that are globally known, as well as game states
    as seen by one player (or seen by one player as envisioned by another), based on
    whether the [card] field in the various [Annotated_card.t] are Some or None. *)
-(* CR stabony: should this contain Params.t? *)
+(* XCR stabony: should this contain Params.t?
+   lightvector: Sure. Why not? *)
 module State : sig
   type t =
     { params: Params.t
@@ -66,31 +71,54 @@ module State : sig
     ; hints_left: int
     ; final_turns_left: int (* The # of turns left in the game when the deck is empty *)
     ; num_played: int
-    ; played_cards: Card_id.t list Color.Map.t
-    ; playable_numbers: Number.t Color.Map.t
+    ; played_cards: Card_id.t list
+    ; playable_numbers: Number.t Color.Map.t   (* keys have full domain *)
+    ; handdeck_count: int Card.Map.t           (* keys have full domain *)
+    ; dead_cards: Card.Set.t
     ; discarded_cards: Card_id.t list
     ; known_cards: Card.t Card_id.Map.t
-    ; hands: Card_id.t list Player_id.Map.t
+    ; hands: Card_id.t list Player_id.Map.t    (* keys have full domain *)
     ; rev_history: Turn.t list
     ; cur_player: Player_id.t
     } with sexp
 
   val create : Params.t -> seed:int -> t
 
+  (* State updating -------------------------------------------------- *)
+
+  (* Does not check legality, just plays the effect of the turn. Raises an exception
+     if the turn is invalid (should never raise for turns produced by [eval_action_exn] *)
   val eval_turn_exn : t -> Turn.t -> t
-  val eval_action_exn : t -> Action.t -> t * Turn.t
+  (* Raises exception if illegal. Evaluating the play of an unknown card is allowed if
+     [playableIfUnknown] is specified, but will not not update
+     [playable_numbers, handdeck_count, dead_cards]. *)
+  val eval_action_exn : ?playableIfUnknown:bool -> t -> Action.t -> t * Turn.t
 
-  val score : t -> int
+  (* Utility functions -------------------------------------------------- *)
 
+  (* Known card lookup *)
+  val card : t -> Card_id.t -> Card.t option
   val card_exn : t -> Card_id.t -> Card.t
-  val is_playable_exn : t -> Card.t -> bool
-  val are_playable_in_order_exn : t -> Card.t list -> bool
+
+  (* Card in a given spot in player's hand *)
+  val player_card_exn : t -> Player_id.t -> int -> Card_id.t
+
+  (* Current game stats *)
+  val score : t -> int
+  val discards_left : t -> int (* discards left for perfect score *)
+
+  (* Higher-level card properties *)
+  val is_playable : t -> Card.t -> bool
+  val is_useless: t -> Card.t -> bool (* provably nonplayable *)
+  val is_dangerous: t -> Card.t -> bool (* useful and one card left in deck or hand *)
 
   val all_legal_hints : t -> Card_id.t list -> (Hint.hint * Int.Set.t) list
 
-  val display_string :
-    ?use_ansi_colors:bool -> t -> string
-  (* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
+  val display_string : ?use_ansi_colors:bool -> t -> string
+  val turn_display_string : ?use_ansi_colors:bool -> t -> Turn.t -> string
+
+
+(* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
   (* val is_definitely_legal_exn: 'a t -> Action.t -> bool
    *
    * (\* Return all definitely-legal hints *\)
@@ -122,4 +150,9 @@ module Player : sig
   type wrapped = T:'a t -> wrapped
 end
 
-val play : Params.t -> Player.Intf.wrapped list -> seed:int -> State.t
+val play :
+  Params.t
+  -> Player.Intf.wrapped list
+  -> seed:int
+  -> f:(old:State.t -> State.t -> Turn.t -> unit)
+  -> State.t

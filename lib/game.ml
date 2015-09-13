@@ -5,8 +5,8 @@ open Int.Replace_polymorphic_compare
 module Turn = struct
   type event =
   | Hint of Hint.t
-  | Discard of int * Card_id.t * Card.t
-  | Play of int * Card_id.t * Card.t
+  | Discard of int * Card_id.t (* int = hand idx *)
+  | Play of int * Card_id.t * bool (* int = hand_idx, bool = was_playable *)
   | Draw of Card_id.t
   with sexp
   type t =
@@ -55,6 +55,7 @@ module Params = struct
   type t =
     { deck_params: Deck_params.t
     ; colors: Color.Set.t
+    ; max_number: Number.t
     ; initial_hints: int
     ; max_hints: int
     ; bombs_before_loss: int
@@ -66,6 +67,7 @@ module Params = struct
     ; player_count: int
     ; hand_size: int
     ; max_score: int
+    ; max_discards: int
     }
   with sexp
 
@@ -78,8 +80,12 @@ module Params = struct
     in
     let hintable_colors = Color.default_5 |> Color.Set.of_list in
     let hintable_numbers = Number.all ~num_numbers:5 |> Number.Set.of_list in
-    { deck_params = Deck_params.standard;
+    let deck_params = Deck_params.standard in
+    let deck_size = Deck_params.to_deck deck_params |> List.length in
+    let max_score = 25 in
+    { deck_params;
       colors = Color.default_5 |> Color.Set.of_list;
+      max_number = Number.of_int 5;
       initial_hints = 8;
       max_hints = 8;
       bombs_before_loss = 3;
@@ -93,8 +99,15 @@ module Params = struct
       player_count;
       hand_size;
       max_score = 25;
+      max_discards = deck_size - max_score - player_count * (hand_size-1);
     }
 
+  let hint_matches_card t hint card =
+    match hint with
+    | Hint.Number n ->
+      Number.(=) card.Card.number n || Set.mem t.rainbow_numbers card.Card.number
+    | Hint.Color c ->
+      Color.(=) card.Card.color c  || Set.mem t.rainbow_colors card.Card.color
 end
 
 module State = struct
@@ -105,11 +118,13 @@ module State = struct
     ; hints_left: int
     ; final_turns_left: int
     ; num_played: int
-    ; played_cards: Card_id.t list Color.Map.t
-    ; playable_numbers: Number.t Color.Map.t
+    ; played_cards: Card_id.t list
+    ; playable_numbers: Number.t Color.Map.t (* keys have full domain *)
+    ; handdeck_count: int Card.Map.t         (* keys have full domain *)
+    ; dead_cards: Card.Set.t
     ; discarded_cards: Card_id.t list
     ; known_cards: Card.t Card_id.Map.t
-    ; hands: Card_id.t list Player_id.Map.t
+    ; hands: Card_id.t list Player_id.Map.t  (* keys have full domain *)
     ; rev_history: Turn.t list
     ; cur_player: Player_id.t
     }
@@ -117,32 +132,23 @@ module State = struct
 
   (* BASIC UTILITIES *)
 
-  let card t card_id =
-    Map.find t.known_cards card_id
-  let card_exn t card_id =
-    Map.find_exn t.known_cards card_id
+  let card t card_id =     Map.find     t.known_cards card_id
+  let card_exn t card_id = Map.find_exn t.known_cards card_id
+  let player_card_exn t player hand_idx = List.nth_exn t.hands.{player} hand_idx
 
-  let is_playable_exn t card =
-    let { Card. color; number } = card in
-    Number.(=) (Map.find_exn t.playable_numbers color) number
+  let is_playable t card =
+    Number.(=) card.Card.number t.playable_numbers.{card.Card.color}
 
-  let are_playable_in_order_exn t cards =
-    List.fold ~init:(t.playable_numbers, true) cards
-      ~f:(fun (playable_numbers, good_so_far) card ->
-        let { Card. color; number } = card in
-        let playable_number = Map.find_exn playable_numbers color in
-        Map.add playable_numbers ~key:color ~data:(Number.next playable_number),
-        good_so_far && Number.(=) playable_number number)
-    |> snd
+  let is_useless t card =
+    Number.(<) card.Card.number t.playable_numbers.{card.Card.color}
+    || Set.mem t.dead_cards card
 
-
+  let is_dangerous t card =
+    Number.(>=) card.Card.number t.playable_numbers.{card.Card.color}
+    && t.handdeck_count.{card} = 1
 
   let hint_matches_card t hint card =
-    match hint with
-    | Hint.Number n ->
-      Number.(=) card.Card.number n || Set.mem t.params.Params.rainbow_numbers card.Card.number
-    | Hint.Color c ->
-      Color.(=) card.Card.color c  || Set.mem t.params.Params.rainbow_colors card.Card.color
+    Params.hint_matches_card t.params hint card
 
   let matching_indices t hint hand =
     List.filter_mapi hand ~f:(fun i card_id ->
@@ -162,49 +168,50 @@ module State = struct
     in
     loop 0 list ~f
 
-  let is_legal_hint_exn t hint =
+  let is_legal_hint t hint =
     let { Hint. target; hint; hand_indices } = hint in
     Player_id.is_legal target ~player_count:t.params.Params.player_count
     && Player_id.(<>) target t.cur_player
     && t.hints_left > 0
     && not (Set.is_empty hand_indices)
-    && for_all_i (Map.find_exn t.hands target) ~f:(fun i card_id ->
+    && for_all_i t.hands.{target} ~f:(fun i card_id ->
       Bool.(=) (hint_matches_card t hint (card_exn t card_id)) (Set.mem hand_indices i))
 
   let all_legal_hints t hand =
     List.map t.params.Params.possible_hints ~f:(fun hint -> hint, matching_indices t hint hand)
     |> List.filter ~f:(fun (hint, matches) -> not (Set.is_empty matches))
 
-  let is_definitely_legal_exn t action =
+  let is_definitely_legal t action =
     match action with
-    | Action.Hint hint -> is_legal_hint_exn t hint
+    | Action.Hint hint -> is_legal_hint t hint
     | Action.Discard i | Action.Play i ->
       0 <= i
-      && i < t.params.Params.hand_size
+      && i < List.length t.hands.{t.cur_player}
 
-  (* GAMEPLAY *)
-
-  let turn_of_action_exn t action =
-    if not (is_definitely_legal_exn t action)
+  let turn_of_action_exn ?playableIfUnknown t action  =
+    if not (is_definitely_legal t action)
     then failwith (
       Sexp.to_string (Action.sexp_of_t action)
       ^ "\n"
       ^ Sexp.to_string (sexp_of_t t));
-    let card_details_of_index i =
-      let card_id = List.nth_exn (Player_id.Map.find_exn t.hands t.cur_player) i in
-      let card = card_exn t card_id in
-      (i, card_id, card)
-    in
     let events =
       let non_draw_event =
         match action with
         | Action.Hint hint -> Turn.Hint hint
         | Action.Discard i ->
-          let i, card_id, card = card_details_of_index i in
-          Turn.Discard (i, card_id, card)
+          let card_id = player_card_exn t t.cur_player i in
+          Turn.Discard (i, card_id)
         | Action.Play i ->
-          let i, card_id, card = card_details_of_index i in
-          Turn.Play (i, card_id, card)
+          let card_id = player_card_exn t t.cur_player i in
+          let playable =
+            match playableIfUnknown with
+            | None -> is_playable t (card_exn t card_id)
+            | Some b ->
+              match card t card_id with
+              | None -> b
+              | Some card -> is_playable t card
+          in
+          Turn.Play (i, card_id, playable)
       in
       let draws =
         match action with
@@ -220,13 +227,13 @@ module State = struct
 
   let eval_turn_exn t turn =
     let { Turn. who; events } = turn in
-    let eval_event_exn t event =
+    let eval_event t event =
       let bombs_used, hints_used, play, discard, draw =
         match event with
-        | Turn.Discard (_, card_id, _) ->
+        | Turn.Discard (_, card_id) ->
           0, (-1), None, Some card_id, None
-        | Turn.Play (i, card_id, card) ->
-          if is_playable_exn t card
+        | Turn.Play (i, card_id, playable) ->
+          if playable
           then 0, 0, Some card_id, None, None
           else 1, 0, None, Some card_id, None
         | Turn.Hint _ ->
@@ -240,36 +247,56 @@ module State = struct
         | _ -> t.deck
       in
       let remove_from_hand hands card_id =
-        let hand = Player_id.Map.find_exn hands who in
         Map.add hands ~key:who
-          ~data:(List.filter hand ~f:(fun c -> Card_id.(<>) c card_id))
+          ~data:(List.filter hands.{who} ~f:(fun c -> Card_id.(<>) c card_id))
       in
       let add_to_hand hands card_id =
-        let hand = Player_id.Map.find_exn hands who in
-        Map.add hands ~key:who
-          ~data:(card_id :: hand)
+        Map.add hands ~key:who ~data:(card_id :: hands.{who})
       in
-      let played_cards, playable_numbers, num_played, hands =
-        Option.fold play ~init:(t.played_cards, t.playable_numbers, t.num_played, t.hands)
-          ~f:(fun (played_cards, playable_numbers, num_played, hands) play ->
-            let card = card_exn t play in
-            let color = card.Card.color in
-            Map.add_multi played_cards ~key:color ~data:play,
-            Map.add playable_numbers ~key:color ~data:(Number.next card.Card.number),
+      let played_cards, num_played, hands =
+        Option.fold play ~init:(t.played_cards, t.num_played, t.hands)
+          ~f:(fun (played_cards, num_played, hands) play ->
+            play :: played_cards,
             num_played + 1,
             remove_from_hand hands play)
         |> fun init -> Option.fold discard ~init
-          ~f:(fun (played_cards, playable_numbers, num_played, hands) discard ->
+          ~f:(fun (played_cards, num_played, hands) discard ->
             played_cards,
-            playable_numbers,
             num_played,
             remove_from_hand hands discard)
         |> fun init -> Option.fold draw ~init
-          ~f:(fun (played_cards, playable_numbers, num_played, hands) draw ->
+          ~f:(fun (played_cards, num_played, hands) draw ->
             played_cards,
-            playable_numbers,
             num_played,
             add_to_hand hands draw)
+      in
+      let playable_numbers, handdeck_count, dead_cards =
+        Option.fold play ~init:(t.playable_numbers, t.handdeck_count, t.dead_cards)
+          ~f:(fun ((playable_numbers, handdeck_count, dead_cards) as s) play ->
+            match card t play with
+            | None -> s
+            | Some card ->
+              Map.add playable_numbers ~key:card.Card.color ~data:(Number.next card.Card.number),
+              Map.add handdeck_count ~key:card ~data:(handdeck_count.{card} - 1),
+              dead_cards
+          )
+        |> fun init -> Option.fold discard ~init
+          ~f:(fun ((playable_numbers, handdeck_count, dead_cards) as s) discard ->
+            match card t discard with
+            | None -> s
+            | Some card ->
+              let hdcount = handdeck_count.{card} - 1 in
+              let dead_cards =
+                if hdcount = 0 && Number.(>=) card.Card.number playable_numbers.{card.Card.color}
+                then List.fold (Number.between ~min:card.Card.number ~max:t.params.Params.max_number)
+                  ~init:dead_cards ~f:(fun dead_cards n -> Set.add dead_cards {
+                    Card.color = card.Card.color; number = n; })
+                else dead_cards
+              in
+              playable_numbers,
+              Map.add handdeck_count ~key:card ~data:hdcount,
+              dead_cards
+          )
       in
       { t with deck
         ; bombs_left = t.bombs_left - bombs_used
@@ -277,6 +304,8 @@ module State = struct
         ; num_played
         ; played_cards
         ; playable_numbers
+        ; handdeck_count
+        ; dead_cards
         ; discarded_cards = begin
           match discard with
           | None -> t.discarded_cards
@@ -291,7 +320,7 @@ module State = struct
       else 0
     in
     let new_t =
-      List.fold turn.Turn.events ~init:t ~f:eval_event_exn
+      List.fold turn.Turn.events ~init:t ~f:eval_event
     in
     { new_t with
       final_turns_left = new_t.final_turns_left - final_turns_used;
@@ -299,8 +328,8 @@ module State = struct
       cur_player = Player_id.next t.cur_player ~player_count:t.params.Params.player_count;
     }
 
-  let eval_action_exn t action =
-    let turn = turn_of_action_exn t action in
+  let eval_action_exn ?playableIfUnknown t action =
+    let turn = turn_of_action_exn ?playableIfUnknown t action in
     eval_turn_exn t turn, turn
 
   let rec random_permutation l ~rand =
@@ -321,15 +350,32 @@ module State = struct
     in
     let rand = Random.State.make [|seed|] in
     let cards = random_permutation (Deck_params.to_deck deck_params) ~rand in
-    let deck = List.init (List.length cards) ~f:Card_id.of_int in
+    let deck = Card_id.all ~deck:cards in
     let bombs_left = bombs_before_loss in
     let hints_left = initial_hints in
     let final_turns_left = player_count in
     let num_played = 0 in
-    let played_cards = Color.Map.empty in
+    let played_cards = [] in
     let playable_numbers =
       Color.Map.of_alist_exn (List.map (Set.to_list colors) ~f:(fun c -> c, Number.first))
     in
+    let handdeck_count =
+      List.map cards ~f:(fun card -> (card,()))
+      |> Card.Map.of_alist_multi
+      |> Map.map ~f:List.length
+    in
+    let handdeck_count =
+      (* Just to be able to handle weird decks and out-of-bounds queries *)
+      List.fold (Number.between ~min:Number.first ~max:params.Params.max_number)
+        ~init:handdeck_count ~f:(fun handdeck_count number ->
+          Set.fold params.Params.colors
+            ~init:handdeck_count ~f:(fun handdeck_count color ->
+              let card = { Card. number; color } in
+              Map.change handdeck_count card (function None -> Some 0 | x -> x)
+            )
+        )
+    in
+    let dead_cards = Card.Set.empty in
     let discarded_cards = [] in
     let players = Player_id.all ~player_count in
     let hands =
@@ -344,7 +390,8 @@ module State = struct
     let cur_player = Player_id.first in
     let init =
       { params; deck; bombs_left; hints_left; final_turns_left; num_played
-      ; played_cards; playable_numbers; discarded_cards; hands; known_cards; rev_history
+      ; played_cards; playable_numbers; handdeck_count; dead_cards
+      ; discarded_cards; hands; known_cards; rev_history
       ; cur_player }
     in
     let initial_turns =
@@ -355,9 +402,9 @@ module State = struct
     in
     List.fold initial_turns ~init ~f:eval_turn_exn
 
-  let specialize_exn t player =
+  let specialize t player =
     let invisible_cards =
-      Map.find_exn t.hands player @ t.deck
+      t.hands.{player} @ t.deck
       |> Card_id.Set.of_list
     in
     { t with known_cards = Card_id.Map.filter t.known_cards
@@ -372,39 +419,43 @@ module State = struct
     t.bombs_left = 0
     || t.final_turns_left = 0
 
+  let discards_left t =
+    t.params.Params.max_discards - List.length t.discarded_cards
+
   (* MISC *)
   let display_string ?(use_ansi_colors=false) t =
+    let cardstr card =
+      if use_ansi_colors
+      then Card.to_ansicolor_string card
+      else Card.to_string card
+    in
+    let idstr id =
+      Option.value_map (card t id)
+        ~default:"?"
+        ~f:cardstr
+    in
     let player_ids = Map.keys t.hands |> List.sort ~cmp:Player_id.compare in
     let hand_str =
       List.map player_ids ~f:(fun id ->
-        let hand = Player_id.Map.find_exn t.hands id in
-        let hand_str =
-          List.map hand ~f:(fun card_id ->
-            match Map.find t.known_cards card_id with
-            | None -> "?"
-            | Some card ->
-              if use_ansi_colors
-              then Card.to_ansicolor_string card
-              else Card.to_string card
-          )
-          |> String.concat ~sep:""
-        in
+        let hand = t.hands.{id} in
+        let hand_str = List.map hand ~f:idstr |> String.concat ~sep:"" in
         let to_play_str =
           if Player_id.(=) id t.cur_player
           then "*"
-          else ""
+          else " "
         in
         sprintf "%sP%d: %s" to_play_str (Player_id.to_int id) hand_str
       )
       |> String.concat ~sep:" "
     in
     let played_str =
-      List.map (Map.data t.played_cards) ~f:(fun cards ->
-        let cards = List.map cards ~f:(fun id -> Map.find_exn t.known_cards id) in
+      List.map (Set.to_list t.params.Params.colors) ~f:(fun color ->
+        let cards = List.filter_map t.played_cards ~f:(fun id -> card t id) in
+        let cards = List.filter cards ~f:(fun card -> Color.(=) card.Card.color color) in
         match List.reduce cards ~f:(fun x y ->
           if Number.(>) x.Card.number y.Card.number then x else y)
         with
-        | None -> ""
+        | None -> " "
         | Some card ->
           if use_ansi_colors
           then Card.to_ansicolor_string card
@@ -412,24 +463,67 @@ module State = struct
       )
       |> String.concat ~sep:" "
     in
-    sprintf "Hintsleft %d Bombsleft %d Played: %s  %s"
-      t.hints_left t.bombs_left played_str hand_str
-end
+    let danger_str =
+      List.filter_map t.discarded_cards ~f:(fun id ->
+        if Option.exists (card t id) ~f:(fun card -> is_useless t card)
+        then None
+        else Some id
+      )
+      |> List.sort ~cmp:(fun c0 c1 ->
+        match card t c0, card t c1 with
+        | None, None -> Card_id.compare c0 c1
+        | None, _ -> 1
+        | _, None -> -1
+        | Some c0, Some c1 ->
+          match Color.compare c0.Card.color c1.Card.color with
+          | 0 -> Number.compare c0.Card.number c1.Card.number
+          | x -> x
+      )
+      |> List.map ~f:idstr
+      |> (fun list ->
+        if List.length list >= 8
+        then list
+        else List.init (8 - List.length list) ~f:(fun _ -> " ") @ list)
+      |> String.concat
+    in
+    sprintf "T%3d HL %d BL %d DL %2d Played %s %s danger %s"
+      (List.length t.rev_history - t.params.Params.hand_size * t.params.Params.player_count)
+      t.hints_left
+      t.bombs_left
+      (discards_left t)
+      played_str
+      hand_str
+      danger_str
 
-(* let () =
- *   let state =
- *     State.create (Params.standard ~player_count:2)
- *     |> fun t -> State.eval_action_exn t (Action.Discard 2)
- *     |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
- *     |> fun (t, _) ->
- *       let target = Player_id.of_int 1 in
- *       let hint, hand_indices =
- *         List.hd_exn (State.all_legal_hints t (Map.find_exn t.State.hands target))
- *       in
- *       State.eval_action_exn t (Action.Hint { Hint. target; hint; hand_indices })
- *     |> fun (t, _) -> State.specialize t (Player_id.of_int 0)
- *   in
- *   printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state)) *)
+  let turn_display_string ?(use_ansi_colors=false) t turn =
+    let cardstr card =
+      if use_ansi_colors
+      then Card.to_ansicolor_string card
+      else Card.to_string card
+    in
+    let idstr id =
+      Option.value_map (card t id)
+        ~default:"?"
+        ~f:cardstr
+    in
+    sprintf "Player %d: " (Player_id.to_int turn.Turn.who)
+    ^ String.concat ~sep:", " (List.map turn.Turn.events ~f:(fun event ->
+      match event with
+      | Turn.Draw id -> "Draw " ^ idstr id
+      | Turn.Play (idx,id,true) -> sprintf "Play #%d %s" idx (idstr id)
+      | Turn.Play (idx,id,false) -> sprintf "Bomb #%d %s" idx (idstr id)
+      | Turn.Discard (idx,id)  -> sprintf "Discard #%d %s" idx (idstr id)
+      | Turn.Hint { Hint.target; hint; hand_indices } ->
+        sprintf "Hint %s to P%d - %s - %s"
+          (Sexp.to_string (Hint.sexp_of_hint hint))
+          (Player_id.to_int target)
+          (String.concat (List.map (Set.to_list hand_indices) ~f:(fun hand_idx ->
+            "#" ^ Int.to_string hand_idx)))
+          (String.concat (List.map (Set.to_list hand_indices) ~f:(fun hand_idx ->
+            idstr (List.nth_exn (t.hands.{target}) hand_idx))))
+    ))
+
+end
 
 module Player = struct
   module Intf = struct
@@ -446,7 +540,7 @@ module Player = struct
   type wrapped = T:'a t -> wrapped
 end
 
-let play params players ~seed =
+let play params players ~seed ~f =
   assert (params.Params.player_count = List.length players);
   let players =
     List.mapi players ~f:(fun i (Player.Intf.T intf) ->
@@ -462,11 +556,12 @@ let play params players ~seed =
       let player = Queue.dequeue_exn players in
       let (Player.T (player_id, player_state, intf)) = player in
       let action =
-        intf.Player.Intf.act player_state (State.specialize_exn state player_id)
+        intf.Player.Intf.act player_state (State.specialize state player_id)
       in
-      let state, _turn = State.eval_action_exn state action in
+      let new_state, turn = State.eval_action_exn state action in
       Queue.enqueue players player;
-      loop state
+      f ~old:state new_state turn;
+      loop new_state
   in
   loop state
 

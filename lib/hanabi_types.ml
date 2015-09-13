@@ -46,14 +46,19 @@ module Number = struct
   let diff t0 t1 = t0 - t1
 
   let all ~num_numbers = List.init num_numbers ~f:(fun x -> x + 1)
+  let between ~min ~max = if min > max then [] else List.init (max-min+1) ~f:(fun x -> x + min)
 end
 
 module Card = struct
-  type t =
-    { color : Color.t
-    ; number : Number.t
-    }
-  with sexp
+  module T = struct
+    type t =
+      { color : Color.t
+      ; number : Number.t
+      }
+    with sexp, compare
+  end
+  include T
+  include Comparable.Make(T)
 
   let (=) a b =
     Color.(=) a.color b.color
@@ -91,6 +96,7 @@ module Card_id = struct
   include Int
   let to_int = Fn.id
   let of_int = Fn.id
+  let all ~deck = List.mapi deck ~f:(fun i _ -> i)
 end
 
 module Hint = struct
@@ -113,4 +119,10 @@ module Action = struct
   | Discard of int
   | Play of int
   with sexp
+end
+
+module Bigarray = struct
+  module Array1 = struct
+    let get map key = Map.find_exn map key
+  end
 end
