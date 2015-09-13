@@ -150,4 +150,9 @@ module Player : sig
   type wrapped = T:'a t -> wrapped
 end
 
-val play : Params.t -> Player.Intf.wrapped list -> seed:int -> State.t
+val play :
+  Params.t
+  -> Player.Intf.wrapped list
+  -> seed:int
+  -> f:(old:State.t -> State.t -> Turn.t -> unit)
+  -> State.t

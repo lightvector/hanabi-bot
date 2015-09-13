@@ -540,7 +540,7 @@ module Player = struct
   type wrapped = T:'a t -> wrapped
 end
 
-let play params players ~seed =
+let play params players ~seed ~f =
   assert (params.Params.player_count = List.length players);
   let players =
     List.mapi players ~f:(fun i (Player.Intf.T intf) ->
@@ -558,9 +558,10 @@ let play params players ~seed =
       let action =
         intf.Player.Intf.act player_state (State.specialize state player_id)
       in
-      let state, _turn = State.eval_action_exn state action in
+      let new_state, turn = State.eval_action_exn state action in
       Queue.enqueue players player;
-      loop state
+      f ~old:state new_state turn;
+      loop new_state
   in
   loop state
 
