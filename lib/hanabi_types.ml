@@ -120,3 +120,9 @@ module Action = struct
   | Play of int
   with sexp
 end
+
+module Bigarray = struct
+  module Array1 = struct
+    let get map key = Map.find_exn map key
+  end
+end
