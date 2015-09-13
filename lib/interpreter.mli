@@ -23,4 +23,9 @@ end
 
 type t = Beliefs.t Player_id.Map.t
 
-val interpret : t -> State.t -> Turn.t -> t
+val interpret :
+  t
+  -> old_state:State.t
+  -> Turn.t
+  -> State.t
+  -> t
