@@ -55,6 +55,7 @@ module Params = struct
   type t =
     { deck_params: Deck_params.t
     ; colors: Color.Set.t
+    ; max_number: Number.t
     ; initial_hints: int
     ; max_hints: int
     ; bombs_before_loss: int
@@ -84,6 +85,7 @@ module Params = struct
     let max_score = 25 in
     { deck_params;
       colors = Color.default_5 |> Color.Set.of_list;
+      max_number = Number.of_int 5;
       initial_hints = 8;
       max_hints = 8;
       bombs_before_loss = 3;
@@ -100,6 +102,12 @@ module Params = struct
       max_discards = deck_size - max_score - player_count * (hand_size-1);
     }
 
+  let hint_matches_card t hint card =
+    match hint with
+    | Hint.Number n ->
+      Number.(=) card.Card.number n || Set.mem t.rainbow_numbers card.Card.number
+    | Hint.Color c ->
+      Color.(=) card.Card.color c  || Set.mem t.rainbow_colors card.Card.color
 end
 
 module State = struct
@@ -112,6 +120,8 @@ module State = struct
     ; num_played: int
     ; played_cards: Card_id.t list
     ; playable_numbers: Number.t Color.Map.t   (* keys have full domain *)
+    ; handdeck_count: int Card.Map.t       (* keys have full domain *)
+    ; dead_cards: Card.Set.t
     ; discarded_cards: Card_id.t list
     ; known_cards: Card.t Card_id.Map.t
     ; hands: Card_id.t list Player_id.Map.t    (* keys have full domain *)
@@ -144,16 +154,15 @@ module State = struct
     )
 
   let is_useless t card =
-    if Number.(>) (Map.find_exn t.playable_numbers card.Card.color) card.Card.number
-    then true
-    else false (* CR lightvector: Consider including useless cards due to dead piles *)
+    Number.(<) card.Card.number (Map.find_exn t.playable_numbers card.Card.color)
+    || Set.mem t.dead_cards card
+
+  let is_dangerous t card =
+    Number.(>=) card.Card.number (Map.find_exn t.playable_numbers card.Card.color)
+    && Map.find_exn t.handdeck_count card = 1
 
   let hint_matches_card t hint card =
-    match hint with
-    | Hint.Number n ->
-      Number.(=) card.Card.number n || Set.mem t.params.Params.rainbow_numbers card.Card.number
-    | Hint.Color c ->
-      Color.(=) card.Card.color c  || Set.mem t.params.Params.rainbow_colors card.Card.color
+    Params.hint_matches_card t.params hint card
 
   let matching_indices t hint hand =
     List.filter_mapi hand ~f:(fun i card_id ->
@@ -267,32 +276,50 @@ module State = struct
         Map.add hands ~key:who
           ~data:(card_id :: hand)
       in
-      let played_cards, playable_numbers, num_played, hands =
-        Option.fold play ~init:(t.played_cards, t.playable_numbers, t.num_played, t.hands)
-          ~f:(fun (played_cards, playable_numbers, num_played, hands) play ->
-            match card t play with
-            | None ->
-              play :: played_cards,
-              playable_numbers,
-              num_played + 1,
-              remove_from_hand hands play
-            | Some card ->
-              play :: played_cards,
-              Map.add playable_numbers ~key:card.Card.color ~data:(Number.next card.Card.number),
-              num_played + 1,
-              remove_from_hand hands play)
+      let played_cards, num_played, hands =
+        Option.fold play ~init:(t.played_cards, t.num_played, t.hands)
+          ~f:(fun (played_cards, num_played, hands) play ->
+            play :: played_cards,
+            num_played + 1,
+            remove_from_hand hands play)
         |> fun init -> Option.fold discard ~init
-          ~f:(fun (played_cards, playable_numbers, num_played, hands) discard ->
+          ~f:(fun (played_cards, num_played, hands) discard ->
             played_cards,
-            playable_numbers,
             num_played,
             remove_from_hand hands discard)
         |> fun init -> Option.fold draw ~init
-          ~f:(fun (played_cards, playable_numbers, num_played, hands) draw ->
+          ~f:(fun (played_cards, num_played, hands) draw ->
             played_cards,
-            playable_numbers,
             num_played,
             add_to_hand hands draw)
+      in
+      let playable_numbers, handdeck_count, dead_cards =
+        Option.fold play ~init:(t.playable_numbers, t.handdeck_count, t.dead_cards)
+          ~f:(fun ((playable_numbers, handdeck_count, dead_cards) as s) play ->
+            match card t play with
+            | None -> s
+            | Some card ->
+              Map.add playable_numbers ~key:card.Card.color ~data:(Number.next card.Card.number),
+              Map.add handdeck_count ~key:card ~data:(Map.find_exn handdeck_count card - 1),
+              dead_cards
+          )
+        |> fun init -> Option.fold discard ~init
+          ~f:(fun ((playable_numbers, handdeck_count, dead_cards) as s) discard ->
+            match card t discard with
+            | None -> s
+            | Some card ->
+              let hdcount = Map.find_exn handdeck_count card - 1 in
+              let dead_cards =
+                if hdcount = 0 && Number.(>=) card.Card.number (Map.find_exn playable_numbers card.Card.color)
+                then List.fold (Number.between ~min:card.Card.number ~max:t.params.Params.max_number)
+                  ~init:dead_cards ~f:(fun dead_cards n -> Set.add dead_cards {
+                    Card.color = card.Card.color; number = n; })
+                else dead_cards
+              in
+              playable_numbers,
+              Map.add handdeck_count ~key:card ~data:hdcount,
+              dead_cards
+          )
       in
       { t with deck
         ; bombs_left = t.bombs_left - bombs_used
@@ -300,6 +327,8 @@ module State = struct
         ; num_played
         ; played_cards
         ; playable_numbers
+        ; handdeck_count
+        ; dead_cards
         ; discarded_cards = begin
           match discard with
           | None -> t.discarded_cards
@@ -344,7 +373,7 @@ module State = struct
     in
     let rand = Random.State.make [|seed|] in
     let cards = random_permutation (Deck_params.to_deck deck_params) ~rand in
-    let deck = List.init (List.length cards) ~f:Card_id.of_int in
+    let deck = Card_id.all ~deck:cards in
     let bombs_left = bombs_before_loss in
     let hints_left = initial_hints in
     let final_turns_left = player_count in
@@ -353,6 +382,12 @@ module State = struct
     let playable_numbers =
       Color.Map.of_alist_exn (List.map (Set.to_list colors) ~f:(fun c -> c, Number.first))
     in
+    let handdeck_count =
+      List.map cards ~f:(fun card -> (card,()))
+      |> Card.Map.of_alist_multi
+      |> Map.map ~f:List.length
+    in
+    let dead_cards = Card.Set.empty in
     let discarded_cards = [] in
     let players = Player_id.all ~player_count in
     let hands =
@@ -367,7 +402,8 @@ module State = struct
     let cur_player = Player_id.first in
     let init =
       { params; deck; bombs_left; hints_left; final_turns_left; num_played
-      ; played_cards; playable_numbers; discarded_cards; hands; known_cards; rev_history
+      ; played_cards; playable_numbers; handdeck_count; dead_cards
+      ; discarded_cards; hands; known_cards; rev_history
       ; cur_player }
     in
     let initial_turns =

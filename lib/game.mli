@@ -36,6 +36,7 @@ module Params : sig
     (* we could remove this and use number_distribution below if we want all colors to have the same distribution *)
     { deck_params: Deck_params.t
     ; colors : Color.Set.t
+    ; max_number: Number.t
     ; initial_hints: int
     ; max_hints: int
     ; bombs_before_loss: int
@@ -52,6 +53,8 @@ module Params : sig
   with sexp
 
   val standard: player_count:int -> t
+
+  val hint_matches_card: t -> Hint.hint -> Card.t -> bool
 end
 
 (* An instance of the game state.
@@ -69,6 +72,8 @@ module State : sig
     ; num_played: int
     ; played_cards: Card_id.t list
     ; playable_numbers: Number.t Color.Map.t   (* keys have full domain *)
+    ; handdeck_count: int Card.Map.t       (* keys have full domain *)
+    ; dead_cards: Card.Set.t
     ; discarded_cards: Card_id.t list
     ; known_cards: Card.t Card_id.Map.t
     ; hands: Card_id.t list Player_id.Map.t    (* keys have full domain *)
@@ -83,7 +88,8 @@ module State : sig
   (* Does not check legality, just plays the effect of the turn *)
   val eval_turn_exn : t -> Turn.t -> t
   (* Checks for legality. Evaluating the play of an unknown card is allowed if
-     playableIfUnknown is specified, but will not not update [playable_numbers]. *)
+     playableIfUnknown is specified, but will not not update
+     [playable_numbers, handdeck_count, dead_cards]. *)
   val eval_action_exn : ?playableIfUnknown:bool -> t -> Action.t -> t * Turn.t
 
   (* Utility functions -------------------------------------------------- *)
@@ -99,6 +105,7 @@ module State : sig
   (* Higher-level card properties *)
   val is_playable : t -> Card.t -> bool
   val is_useless: t -> Card.t -> bool (* provably nonplayable *)
+  val is_dangerous: t -> Card.t -> bool (* useful and one card left in deck or hand *)
   val are_playable_in_order : t -> Card.t list -> bool
 
   val all_legal_hints : t -> Card_id.t list -> (Hint.hint * Int.Set.t) list
