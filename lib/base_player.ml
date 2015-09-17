@@ -251,12 +251,9 @@ let find_hint_of_playable state game_state other_player =
         if already_hinted_as_playable_or_identified
         then None
         else
-          List.filter (Game.State.all_legal_hints game_state hand)
-            ~f:(fun (hint, indices) ->
-              Int.Set.min_elt_exn indices = hand_index)
+          List.filter (Game.State.all_legal_hints_of_hand_exn game_state hand ~target:other_player)
+            ~f:(fun hint ->Int.Set.min_elt_exn hint.Hint.hand_indices = hand_index)
           |> List.hd
-          |> Option.map ~f:(fun (hint, hand_indices) ->
-            { Hint. target = other_player; hint; hand_indices })
   )
 
 let find_hint_of_danger state game_state other_player =
@@ -275,12 +272,9 @@ let find_hint_of_danger state game_state other_player =
     if already_hinted
     then None
     else
-      List.filter (Game.State.all_legal_hints game_state hand)
-        ~f:(fun (hint, indices) ->
-          Int.Set.min_elt_exn indices = (hand_size - 1))
+      List.filter (Game.State.all_legal_hints_of_hand_exn game_state hand ~target:other_player)
+        ~f:(fun hint -> Int.Set.min_elt_exn hint.Hint.hand_indices = hand_size - 1)
       |> List.hd
-      |> Option.map ~f:(fun (hint, hand_indices) ->
-        { Hint. target = other_player; hint; hand_indices })
 
 let find_identified_play game_state state ~my_hand =
   let card_state = card_state_of_game_state game_state in

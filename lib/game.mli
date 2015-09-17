@@ -61,7 +61,8 @@ end
    Capable of representing game states that are globally known, as well as game states
    as seen by one player (or seen by one player as envisioned by another), based on
    whether the [card] field in the various [Annotated_card.t] are Some or None. *)
-(* CR stabony: should this contain Params.t? *)
+(* XCR stabony: should this contain Params.t?
+   lightvector: Sure. Why not? *)
 module State : sig
   type t =
     { params: Params.t
@@ -72,7 +73,8 @@ module State : sig
     ; num_played: int
     ; played_cards: Card_id.t list
     ; playable_numbers: Number.t Color.Map.t   (* keys have full domain *)
-    ; handdeck_count: int Card.Map.t       (* keys have full domain *)
+    ; handdeck_count: int Card.Map.t           (* keys have full domain *)
+    ; unknown_count: int Card.Map.t            (* keys have full domain *)
     ; dead_cards: Card.Set.t
     ; discarded_cards: Card_id.t list
     ; known_cards: Card.t Card_id.Map.t
@@ -85,18 +87,37 @@ module State : sig
 
   (* State updating -------------------------------------------------- *)
 
-  (* Does not check legality, just plays the effect of the turn *)
+  (* Does not check legality, just plays the effect of the turn. Raises an exception
+     if the turn is invalid (should never raise for turns produced by [eval_action_exn] *)
   val eval_turn_exn : t -> Turn.t -> t
-  (* Checks for legality. Evaluating the play of an unknown card is allowed if
-     playableIfUnknown is specified, but will not not update
-     [playable_numbers, handdeck_count, dead_cards]. *)
-  val eval_action_exn : ?playableIfUnknown:bool -> t -> Action.t -> t * Turn.t
+  (* Raises exception if illegal.
+     [playable_if_unknown] - if specified, playing an unknown card is allowed, but doing so
+     won't update, handdeck_count, dead_cards].
+     [allow_unknown_unhinted] - if specified, allows hints of hands that contain unknown
+     cards as long as all hinted cards are known
+  *)
+  val eval_action_exn :
+    ?playable_if_unknown:bool
+    -> ?allow_unknown_unhinted:bool
+    -> t
+    -> Action.t
+    -> t * Turn.t
+
+  (* Set the given card as the known card for this id. Fails if this card id is already
+     known or if the setting is impossible given the counts of unknown cards *)
+  val reveal_exn : t -> Card_id.t -> Card.t -> t
+
+  (* Hides all the cards that the specified player can't see *)
+  val specialize : t -> Player_id.t -> t
 
   (* Utility functions -------------------------------------------------- *)
 
   (* Known card lookup *)
   val card : t -> Card_id.t -> Card.t option
   val card_exn : t -> Card_id.t -> Card.t
+
+  (* Card in a given spot in player's hand *)
+  val player_card_exn : t -> Player_id.t -> int -> Card_id.t
 
   (* Current game stats *)
   val score : t -> int
@@ -106,28 +127,16 @@ module State : sig
   val is_playable : t -> Card.t -> bool
   val is_useless: t -> Card.t -> bool (* provably nonplayable *)
   val is_dangerous: t -> Card.t -> bool (* useful and one card left in deck or hand *)
-  val are_playable_in_order : t -> Card.t list -> bool
 
-  val all_legal_hints : t -> Card_id.t list -> (Hint.hint * Int.Set.t) list
+  val all_legal_hints_of_hand_exn : t -> Card_id.t list -> target:Player_id.t -> Hint.t list (* exn if hand unknown *)
+  val all_legal_hints_exn : t -> Player_id.t -> Hint.t list (* exn if hand unknown *)
+  val all_cards_in_hand_known : t -> Player_id.t -> bool
+
+  (* no exn if hand unknown if hand unknown, just assumes unknown cards won't interfere *)
+  val maybe_legal_hints : t -> Player_id.t -> Hint.t list
 
   val display_string : ?use_ansi_colors:bool -> t -> string
   val turn_display_string : ?use_ansi_colors:bool -> t -> Turn.t -> string
-
-
-(* True if an action is definitely legal. Fails if any cards hinted are unknown. *)
-  (* val is_definitely_legal_exn: 'a t -> Action.t -> bool
-   *
-   * (\* Return all definitely-legal hints *\)
-   * val legal_hints: 'a t -> Hint.t list
-   *
-   * (\* Perform an action *\)
-   * val act: 'a t -> Action.t -> 'a t Or_error.t
-   * val act_exn: 'a t -> Action.t -> 'a t
-   *
-   * (\* Return a [t] where all cards not visible to the specified player are hidden *\)
-   * val specialize: 'a t -> Player_id.t -> 'a t
-   * (\* Apply the given map function to all annotations on all cards and actions *\)
-   * val map_annots: t -> cards:(Univ.t -> Univ.t) -> actions:(Univ.t -> Univ.t) -> t *)
 
 end
 
@@ -146,4 +155,9 @@ module Player : sig
   type wrapped = T:'a t -> wrapped
 end
 
-val play : Params.t -> Player.Intf.wrapped list -> seed:int -> State.t
+val play :
+  Params.t
+  -> Player.Intf.wrapped list
+  -> seed:int
+  -> f:(old:State.t -> State.t -> Turn.t -> unit)
+  -> State.t

@@ -101,3 +101,13 @@ module Action : sig
   | Play of int
   with sexp
 end
+
+(* This is syntactic sugar so that you can write:
+   map.{key}
+   instead of:
+   Map.find_exn map key *)
+module Bigarray : sig
+  module Array1 : sig
+    val get: ('key,'value,'cmp) Map.t -> 'key -> 'value
+  end
+end
