@@ -110,6 +110,17 @@ module Params = struct
       Color.(=) card.Card.color c  || Set.mem t.rainbow_colors card.Card.color
 end
 
+module View = struct
+  module T = struct
+    type t =
+    | Common
+    | Pid of Player_id.t
+    with sexp, compare
+  end
+  include T
+  include Comparable.Make(T)
+end
+
 module State = struct
   type t =
     { params: Params.t
@@ -455,9 +466,12 @@ module State = struct
     let known_cards = Map.add t.known_cards ~key:card_id ~data:card in
     { t with known_cards; unknown_count }
 
-  let specialize t player =
+  let specialize t view =
     let invisible_cards =
-      t.hands.{player} @ t.deck
+      (match view with
+      | View.Common  -> List.concat (Map.data t.hands)
+      | View.Pid pid -> t.hands.{pid}
+      ) @ t.deck
       |> Card_id.Set.of_list
     in
     let unknown_count = Card_id.Map.fold t.known_cards ~init:t.unknown_count
@@ -618,7 +632,7 @@ let play params players ~seed ~f =
       let player = Queue.dequeue_exn players in
       let (Player.T (player_id, player_state, intf)) = player in
       let action =
-        intf.Player.Intf.act player_state (State.specialize state player_id)
+        intf.Player.Intf.act player_state (State.specialize state (View.Pid player_id))
       in
       let new_state, turn = State.eval_action_exn state action in
       Queue.enqueue players player;

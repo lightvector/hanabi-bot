@@ -28,8 +28,8 @@ end
 
 module Per_player = struct
   type t =
-    { player : Player_id.t
-    ; tags   : Tag.t list Card_id.Map.t
+    { view : View.t
+    ; tags : Tag.t list Card_id.Map.t
     } with sexp_of
 
   let add_tag t ~cid ~tag =
@@ -84,58 +84,67 @@ module Per_player = struct
           | Some cid -> cid
           | None -> List.last_exn non_dangers
 
-let update t ~old_state ~new_state ~old_knowledge ~new_knowledge turn =
-  let { Turn. who; events } = turn in
-  let update_beliefs_for_event beliefs event =
-    match event with
-    | Game.Turn.Draw _
-    | Game.Turn.Play _
+  let update t ~old_state ~new_state ~old_knowledge ~new_knowledge turn =
+    let { Turn. who; events } = turn in
+    let update_beliefs_for_event beliefs event =
+      match event with
+      | Game.Turn.Draw _
+      | Game.Turn.Play _
     (* want to add some things here eventually *)
-    | Game.Turn.Discard _ -> beliefs
-    | Game.Turn.Hint hint ->
-      let { Hint. target; hint=_; hand_indices } = hint in
-      if not (Player_id.(=) target t.player)
-      then beliefs
-      else
-        let hand = Map.find_exn old_state.Game.State.hands target in
-        let most_discardable_card =
-          let kpp = Knowledge.player old_knowledge who in
-          most_discardable_for_interpreting_hint t ~kpp ~old_state hand
+      | Game.Turn.Discard _ -> beliefs
+      | Game.Turn.Hint hint ->
+        let { Hint. target; hint=_; hand_indices } = hint in
+        let view_to_update =
+          match t.view with
+          | View.Common -> true
+          | View.Pid pid -> Player_id.(=) target pid
         in
-        let tags,_ =
-          let hint_info =
-            let cids = List.filteri hand ~f:(fun i _cid -> Set.mem hand_indices i) in
-            { Hint_info. cids; hint; giver = who }
+        if not view_to_update
+        then beliefs
+        else
+          let hand = Map.find_exn old_state.Game.State.hands target in
+          let most_discardable_card =
+            let kpp = K.player old_knowledge who in
+            most_discardable_for_interpreting_hint t ~kpp ~old_state hand
           in
-          List.foldi ~init:(t.tags,0) hand
-            ~f:(fun hand_index (tags, hint_index) cid ->
-              if not (Set.mem hand_indices hand_index)
-              then tags,hint_index
-              else
-                let data =
-                  let extra =
-                    if Card_id.(=) cid most_discardable_card
-                    then `was_most_discardable
-                    else `ok
+          let tags,_ =
+            let hint_info =
+              let cids = List.filteri hand ~f:(fun i _cid -> Set.mem hand_indices i) in
+              { Hint_info. cids; hint; giver = who }
+            in
+            List.foldi ~init:(t.tags,0) hand
+              ~f:(fun hand_index (tags, hint_index) cid ->
+                if not (Set.mem hand_indices hand_index)
+                then tags,hint_index
+                else
+                  let data =
+                    let extra =
+                      if Card_id.(=) cid most_discardable_card
+                      then `was_most_discardable
+                      else `ok
+                    in
+                    Tag.Hinted (hint_info, hint_index, extra)
                   in
-                  Tag.Hinted (hint_info, hint_index, extra)
-                in
-                Map.add_multi tags ~key:cid ~data,
-                hint_index + 1)
-        in
-        { beliefs with tags }
-  in
-  List.fold events ~f:update_beliefs_for_event ~init:t
+                  Map.add_multi tags ~key:cid ~data,
+                  hint_index + 1)
+          in
+          { beliefs with tags }
+    in
+    List.fold events ~f:update_beliefs_for_event ~init:t
 end
 
-type t = Per_player.t Player_id.Map.t with sexp_of
+type t = Per_player.t View.Map.t with sexp_of
+
+(* CR stabony: implement *)
+let empty = assert false
 
 let update t ~old_state ~new_state ~old_knowledge ~new_knowledge turn =
-  Map.mapi t ~f:(fun ~key:pid ~data:per_player ->
-    let new_state = State.specialize new_state pid in
-    let old_state = State.specialize old_state pid in
-    let new_knowledge = K.descend new_knowledge pid in
-    let old_knowledge = K.descend old_knowledge pid in
+  Map.mapi t ~f:(fun ~key:view ~data:per_player ->
+    let new_state = State.specialize new_state view in
+    let old_state = State.specialize old_state view in
+    let new_knowledge = K.descend new_knowledge view in
+    let old_knowledge = K.descend old_knowledge view in
     Per_player.update per_player ~old_state ~new_state ~old_knowledge ~new_knowledge turn)
 
-let descend t pid = assert false
+(* CR stabony: implement *)
+let descend t view = assert false

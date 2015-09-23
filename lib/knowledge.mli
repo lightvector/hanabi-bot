@@ -70,5 +70,5 @@ val reveal: t -> Card_id.t -> Card.t -> t
 val inform: t -> Card_id.t -> f:(Of_card.t -> Of_card.t) -> t
 val inform_cond: t -> Card_id.t -> Cond.t ->  t
 
-(* Step inside [pid]'s brain *)
-val descend: t -> Player_id.t -> t
+(* Step inside [view]'s brain *)
+val descend: t -> Game.View.t -> t

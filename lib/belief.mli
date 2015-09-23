@@ -23,6 +23,8 @@ open Game
 
 type t with sexp_of
 
+val empty : t
+
 val update :
   t
   -> old_state:State.t

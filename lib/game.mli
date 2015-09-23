@@ -57,6 +57,14 @@ module Params : sig
   val hint_matches_card: t -> Hint.hint -> Card.t -> bool
 end
 
+module View : sig
+  type t =
+  | Common
+  | Pid of Player_id.t
+  with sexp, compare
+  include Comparable.S with type t := t
+end
+
 (* An instance of the game state.
    Capable of representing game states that are globally known, as well as game states
    as seen by one player (or seen by one player as envisioned by another), based on
@@ -107,8 +115,9 @@ module State : sig
      known or if the setting is impossible given the counts of unknown cards *)
   val reveal_exn : t -> Card_id.t -> Card.t -> t
 
-  (* Hides all the cards that the specified player can't see *)
-  val specialize : t -> Player_id.t -> t
+  (* Hides all the cards that the specified player can't see
+     The common view hides all cards that at least one player can't see *)
+  val specialize : t -> View.t -> t
 
   (* Utility functions -------------------------------------------------- *)
 

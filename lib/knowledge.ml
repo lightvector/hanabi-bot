@@ -256,4 +256,4 @@ let inform_cond t id cond =
     Per_player.inform_cond per_player id cond
   )
 
-let descend t pid = assert false
+let descend t view = assert false
