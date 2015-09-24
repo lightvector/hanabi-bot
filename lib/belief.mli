@@ -23,7 +23,7 @@ open Game
 
 type t with sexp_of
 
-val empty : t
+val empty : State.t -> t
 
 val update :
   t

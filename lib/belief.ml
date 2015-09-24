@@ -32,6 +32,8 @@ module Per_player = struct
     ; tags : Tag.t list Card_id.Map.t
     } with sexp_of
 
+  let empty view = { view; tags = Card_id.Map.empty }
+
   let add_tag t ~cid ~tag =
     { t with
       tags = Map.add_multi t.tags ~key:cid ~data:tag
@@ -131,12 +133,19 @@ module Per_player = struct
           { beliefs with tags }
     in
     List.fold events ~f:update_beliefs_for_event ~init:t
+
 end
 
 type t = Per_player.t View.Map.t with sexp_of
 
-(* CR stabony: implement *)
-let empty = assert false
+let empty state =
+  let views =
+    Map.keys state.State.hands
+    |> List.map ~f:(fun pid -> View.Pid pid)
+    |> fun l -> View.Common :: l
+  in
+  List.map views ~f:(fun view -> view, Per_player.empty view)
+  |> View.Map.of_alist_exn
 
 let update t ~old_state ~new_state ~old_knowledge ~new_knowledge turn =
   Map.mapi t ~f:(fun ~key:view ~data:per_player ->
@@ -147,4 +156,4 @@ let update t ~old_state ~new_state ~old_knowledge ~new_knowledge turn =
     Per_player.update per_player ~old_state ~new_state ~old_knowledge ~new_knowledge turn)
 
 (* CR stabony: implement *)
-let descend t view = assert false
+let descend t view = t
