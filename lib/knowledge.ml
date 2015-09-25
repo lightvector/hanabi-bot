@@ -255,3 +255,5 @@ let inform_cond t id cond =
   Map.map t ~f:(fun per_player ->
     Per_player.inform_cond per_player id cond
   )
+
+let descend t view = assert false
