@@ -53,8 +53,8 @@ module Per_player = struct
     | Tag.Hinted (_hint_info, _hint_index, `was_most_discardable) -> true
     | _ -> false)
 
-  (* Most discardable from the perspective of the kpp passed in (the giver of a hint) *)
-  let most_discardable_for_interpreting_hint t ~kpp ~old_state hand =
+  (* Most discardable from the perspective of the knowledge view passed in (the giver of a hint) *)
+  let most_discardable_for_interpreting_hint t ~kview ~old_state hand =
     match
       List.filter hand ~f:(fun cid -> not (is_danger t ~cid))
     with
@@ -65,7 +65,7 @@ module Per_player = struct
     | non_dangers ->
       match
         List.filter non_dangers ~f:(fun cid ->
-          K.Of_card.definitely (K.Per_player.card kpp cid) (K.Cond.useless old_state))
+          K.Of_card.definitely (K.View.card kview cid) (K.Cond.useless old_state))
         |> List.last
       with
       (* Oldest discardable *)
@@ -94,7 +94,8 @@ module Per_player = struct
       | Game.Turn.Play _
     (* want to add some things here eventually *)
       | Game.Turn.Discard _ -> beliefs
-      | Game.Turn.Hint hint ->
+      | Game.Turn.Hint None -> beliefs
+      | Game.Turn.Hint (Some hint) ->
         let { Hint. target; hint=_; hand_indices } = hint in
         let view_to_update =
           match t.view with
@@ -104,10 +105,10 @@ module Per_player = struct
         if not view_to_update
         then beliefs
         else
-          let hand = Map.find_exn old_state.Game.State.hands target in
+          let hand = old_state.Game.State.hands.{target} in
           let most_discardable_card =
-            let kpp = K.player old_knowledge who in
-            most_discardable_for_interpreting_hint t ~kpp ~old_state hand
+            let kview = K.view old_knowledge who in
+            most_discardable_for_interpreting_hint t ~kview ~old_state hand
           in
           let tags,_ =
             let hint_info =
@@ -157,3 +158,10 @@ let update t ~old_state ~new_state ~old_knowledge ~new_knowledge turn =
 
 (* CR stabony: implement *)
 let descend t view = t
+
+let is_probably_playable t pid cid =
+  Per_player.is_probably_playable t.{View.Pid pid} cid
+
+(* CR lightvector for stabony: implement, maybe set it to something very simple to start *)
+let prob_of_good_hint t pid =
+  assert false

@@ -135,8 +135,9 @@ let update_state state turn =
                 Map.add_multi tags ~key:back
                   ~data:(Tag.Unhinted_back card_state)
               else tags)
-    | Game.Turn.Hint hint ->
-      let { Hint. target; hint; hand_indices } = hint in
+    | Game.Turn.Hint None ->
+      failwith "base player received unknown hint"
+    | Game.Turn.Hint (Some { Hint. target; hint; hand_indices }) ->
       let card_state = card_state_of_game_state game_state in
       let hand = Map.find_exn game_state.Game.State.hands target in
       let tags,_ =
@@ -383,7 +384,7 @@ let act state game_state =
         else first_some_from_other_players ~player_count ~me
           ~f:(find_hint_of_playable state game_state)
       in
-      Option.map hint_playable_opt ~f:(fun hint -> Action.Hint hint)
+      Option.map hint_playable_opt ~f:(fun hint -> Action.Hint (Some hint))
     end
     >>>
       begin
@@ -394,7 +395,7 @@ let act state game_state =
             first_some_from_other_players ~player_count ~me
               ~f:(find_hint_of_danger state game_state)
         in
-        Option.map hint_dangerous_opt ~f:(fun hint -> Action.Hint hint)
+        Option.map hint_dangerous_opt ~f:(fun hint -> Action.Hint (Some hint))
       end
     >>>
       let my_hand = Map.find_exn hands me in

@@ -41,7 +41,8 @@ module Of_card : sig
   val known_number: t -> Number.t option
 end
 
-module Per_player : sig
+(* A state of knowledge about all the cards in the game *)
+module View : sig
   type t = {
     of_cards: Of_card.t Card_id.Map.t;
     unknown_count: int Card.Map.t;
@@ -61,10 +62,13 @@ with sexp_of
 
 val create: Game.Params.t -> t
 
-val player: t -> Player_id.t -> Per_player.t
-val card: t -> Player_id.t -> Card_id.t -> Of_card.t
+val view: t -> Player_id.t -> View.t
+val view2: t -> Player_id.t -> Player_id.t -> View.t
 
-(* Make changes to the global knowledge state, affecting all players *)
+val card: t -> Player_id.t -> Card_id.t -> Of_card.t
+val card2: t -> Player_id.t -> Player_id.t -> Card_id.t -> Of_card.t
+
+(* Make changes to the global knowledge state, affecting all players at all metalevels *)
 val update: t -> old:Game.State.t -> Game.State.t -> Game.Turn.t -> t
 val reveal: t -> Card_id.t -> Card.t -> t
 val inform: t -> Card_id.t -> f:(Of_card.t -> Of_card.t) -> t

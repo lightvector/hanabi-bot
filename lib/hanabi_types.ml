@@ -115,10 +115,12 @@ end
 
 module Action = struct
   type t =
-  | Hint of Hint.t
+  | Hint of Hint.t option
   | Discard of int
   | Play of int
   with sexp
+
+  let (=) = Poly.(=)
 end
 
 module Bigarray = struct

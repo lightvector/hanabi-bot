@@ -87,14 +87,14 @@ module Of_card = struct
 
 end
 
-module Per_player = struct
+module View = struct
   type t = {
     of_cards: Of_card.t Card_id.Map.t;
     unknown_count: int Card.Map.t;
   }
   with sexp_of
 
-  let card t id = t.of_cards.{id}
+  let card t cid = t.of_cards.{cid}
 
   (* If of_card -> new_of_card is a new deduction of exactly what of_card is, call f *)
   let if_new_deduce ~of_card ~new_of_card ~f =
@@ -106,14 +106,14 @@ module Per_player = struct
     else None
 
   (* Updates knowledge to reflect knowing the identity of a card *)
-  let rec reveal t id card =
+  let rec reveal t cid card =
     (* If we already know what this card is, do nothing *)
-    if Of_card.is_known_or_contradiction t.of_cards.{id}
+    if Of_card.is_known_or_contradiction t.of_cards.{cid}
     then t
     else begin
       (* Based on how many cards with this identity remain unknown, figure out how much it
          should affect our likelihoods for other cards *)
-      let num_unknown = Map.find_exn t.unknown_count card - 1 in
+      let num_unknown = t.unknown_count.{card} - 1 in
       let unknown_count = Map.add t.unknown_count ~key:card ~data:num_unknown in
       let cond = Cond.card card in
       let likelihood =
@@ -125,7 +125,7 @@ module Per_player = struct
       let newly_deduced = ref [] in
       let of_cards = Map.mapi t.of_cards ~f:(fun ~key ~data:of_card ->
         (* For the card itself, add the info that it is this card *)
-        if Card_id.(=) key id
+        if Card_id.(=) key cid
         then Of_card.condition_on of_card cond
         (* For other cards, if there are still copies out there, adjust likelihood *)
         else if num_unknown > 0
@@ -142,24 +142,28 @@ module Per_player = struct
       in
       let t = { unknown_count; of_cards } in
       (* And recurse on newly determined cards *)
-      List.fold !newly_deduced ~init:t ~f:(fun t (id,card) -> reveal t id card)
+      List.fold !newly_deduced ~init:t ~f:(fun t (cid,card) -> reveal t cid card)
     end
 
   (* Updates knowledge to reflect a change in knowledge about a card. *)
-  let inform t id ~f =
-    let of_card = t.of_cards.{id} in
+  let inform t cid ~f =
+    let of_card = t.of_cards.{cid} in
     let new_of_card = f of_card in
     match new_deduce ~of_card ~new_of_card with
-    | Some card -> reveal t id card
-    | None -> { t with of_cards = Map.change t.of_cards id (Option.map ~f) }
+    | Some card -> reveal t cid card
+    | None -> { t with of_cards = Map.change t.of_cards cid (Option.map ~f) }
 
   (* Updates knowledge to condition a card on a cond. *)
-  let inform_cond t id cond =
-    inform t id ~f:(fun of_card -> Of_card.condition_on of_card cond)
+  let inform_cond t cid cond =
+    inform t cid ~f:(fun of_card -> Of_card.condition_on of_card cond)
 end
 
-(* player -> what I think that player knows *)
-type t = Per_player.t Player_id.Map.t
+
+type t = {
+  (* pid -> what I think that player knows, 2 levels *)
+  viewss: View.t Player_id.Map.t Player_id.Map.t;
+  common: View.t;
+}
 with sexp_of
 
 let create params =
@@ -173,7 +177,7 @@ let create params =
   in
   let of_cards =
     Card_id.all ~deck
-    |> List.map ~f:(fun id -> (id,base_per_card))
+    |> List.map ~f:(fun cid -> (cid,base_per_card))
     |> Card_id.Map.of_alist_exn
   in
   let unknown_count =
@@ -181,47 +185,79 @@ let create params =
     |> Card.Map.of_alist_multi
     |> Map.map ~f:List.length
   in
-  Player_id.all ~player_count:params.Params.player_count
-  |> List.map ~f:(fun player -> (player, { Per_player. of_cards; unknown_count } ))
-  |> Player_id.Map.of_alist_exn
+  let initial_view = { View. of_cards; unknown_count } in
+  let viewss =
+    Player_id.all ~player_count:params.Params.player_count
+    |> List.map ~f:(fun pid1 ->
+      let map =
+        Player_id.all ~player_count:params.Params.player_count
+        |> List.map ~f:(fun pid2 -> (pid2, initial_view))
+        |> Player_id.Map.of_alist_exn
+      in
+      (pid1, map)
+    )
+    |> Player_id.Map.of_alist_exn
+  in
+  { viewss;
+    common = initial_view;
+  }
 
-let player t player =
-  Map.find_exn t player
+let view t pid =
+  t.viewss.{pid}.{pid}
+let view2 t pid1 pid2 =
+  t.viewss.{pid1}.{pid2}
 
-let card t player id =
-  Per_player.card (Map.find_exn t player) id
+let card t pid cid =
+  View.card (view t pid) cid
+let card2 t pid1 pid2 cid =
+  View.card (view2 t pid1 pid2) cid
+
+let map_all_views t ~f = {
+  viewss = Map.map t.viewss ~f:(fun views -> Map.map views ~f);
+  common = f t.common;
+}
 
 let update t ~old state turn =
+  let reveal_if_able view state cid =
+    match State.card state cid with
+    | None -> view
+    | Some card -> View.reveal view cid card
+  in
   List.fold turn.Turn.events ~init:t ~f:(fun t event ->
     match event with
-    | Turn.Draw id ->
-      Map.mapi t ~f:(fun ~key:player ~data:per_player ->
-        (* Player cannot see what they themselves draw *)
-        if Player_id.(=) player turn.Turn.who
-        then per_player
-        else match State.card state id with
-          | None -> per_player
-          | Some card -> Per_player.reveal per_player id card
-      )
-    | Turn.Discard (_,id) ->
-      Map.map t ~f:(fun per_player ->
-        match State.card state id with
-        | None -> per_player
-        | Some card -> Per_player.reveal per_player id card
-      )
-    | Turn.Play (_,id,playable) ->
-      Map.map t ~f:(fun per_player ->
-        match State.card state id with
+    | Turn.Draw cid -> {
+      viewss = Map.mapi t.viewss ~f:(fun ~key:pid1 ~data:views ->
+        Map.mapi views ~f:(fun ~key:pid2 ~data:view ->
+          (* Player cannot see what they themselves draw *)
+          if Player_id.(=) pid1 turn.Turn.who
+            || Player_id.(=) pid2 turn.Turn.who
+          then view
+          else reveal_if_able view state cid
+        ));
+      common = t.common;
+    }
+    | Turn.Discard (_,cid) -> {
+      viewss = Map.map t.viewss ~f:(fun views ->
+        Map.map views ~f:(fun view ->
+          reveal_if_able view state cid
+        ));
+      common = reveal_if_able t.common state cid;
+    }
+    | Turn.Play (_,cid,playable) ->
+      let update_view view =
+        match State.card state cid with
         | None ->
           let cond =
             if playable
             then Cond.playable old
             else Cond.not (Cond.playable old)
           in
-          Per_player.inform_cond per_player id cond
-        | Some card -> Per_player.reveal per_player id card
-      )
-    | Turn.Hint { Hint. target; hint; hand_indices } ->
+          View.inform_cond view cid cond
+        | Some card -> View.reveal view cid card
+      in
+      map_all_views t ~f:update_view
+    | Turn.Hint None -> t
+    | Turn.Hint (Some { Hint. target; hint; hand_indices }) ->
       let cond =
         match hint with
         | Hint.Number n ->
@@ -232,28 +268,35 @@ let update t ~old state turn =
           ~init:(Cond.color c) ~f:(fun cond c -> Cond.(||) cond (Cond.color c))
       in
       let hand = old.State.hands.{target} in
-      Map.map t ~f:(fun per_player ->
-        List.foldi hand ~init:per_player ~f:(fun hidx per_player id ->
+      let update_view view =
+        List.foldi hand ~init:view ~f:(fun hidx view cid ->
           if Set.mem hand_indices hidx
-          then Per_player.inform_cond per_player id cond
-          else Per_player.inform_cond per_player id (Cond.not cond)
+          then View.inform_cond view cid cond
+          else View.inform_cond view cid (Cond.not cond)
         )
-      )
+      in
+      map_all_views t ~f:update_view
   )
 
-let reveal t id card =
-  Map.map t ~f:(fun per_player ->
-    Per_player.reveal per_player id card
-  )
+let reveal t cid card =
+  map_all_views t ~f:(fun view -> View.reveal view cid card)
 
-let inform t id ~f =
-  Map.map t ~f:(fun per_player ->
-    Per_player.inform per_player id ~f
-  )
+let inform t cid ~f =
+  map_all_views t ~f:(fun view -> View.inform view cid ~f)
 
-let inform_cond t id cond =
-  Map.map t ~f:(fun per_player ->
-    Per_player.inform_cond per_player id cond
-  )
+let inform_cond t cid cond =
+  map_all_views t ~f:(fun view -> View.inform_cond view cid cond)
 
-let descend t view = assert false
+let descend t gameview =
+  match gameview with
+  | Game.View.Common -> map_all_views t ~f:(fun _ -> t.common)
+  | Game.View.Pid pid0 ->
+    let views0 = t.viewss.{pid0} in
+    { viewss = Map.mapi t.viewss ~f:(fun ~key:pid1 ~data:views ->
+      Map.mapi views ~f:(fun ~key:pid2 ~data:_ ->
+        if Player_id.(=) pid1 pid2
+        then views0.{pid1}
+        else t.common
+      ));
+      common = t.common;
+    }
