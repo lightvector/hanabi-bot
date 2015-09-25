@@ -3,7 +3,7 @@ open Hanabi_types
 
 module Turn : sig
   type event =
-    | Hint of Hint.t
+    | Hint of Hint.t option
     | Discard of int * Card_id.t (* int = hand idx *)
     | Play of int * Card_id.t * bool (* int = hand_idx, bool = was_playable *)
     | Draw of Card_id.t
@@ -103,10 +103,12 @@ module State : sig
      won't update, handdeck_count, dead_cards].
      [allow_unknown_unhinted] - if specified, allows hints of hands that contain unknown
      cards as long as all hinted cards are known
+     [allow_unknown_hint] - if specified, allow [Action.Hint None]
   *)
   val eval_action_exn :
     ?playable_if_unknown:bool
     -> ?allow_unknown_unhinted:bool
+    -> ?allow_unknown_hint:bool
     -> t
     -> Action.t
     -> t * Turn.t

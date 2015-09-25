@@ -35,3 +35,6 @@ val update :
   -> t
 
 val descend : t -> Player_id.t -> t
+
+val is_probably_playable : t -> Player_id.t -> Card_id.t -> bool
+val prob_of_good_hint : t -> Player_id.t -> float

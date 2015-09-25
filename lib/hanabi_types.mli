@@ -96,10 +96,11 @@ end
 
 module Action : sig
   type t =
-  | Hint of Hint.t
+  | Hint of Hint.t option (* None used in search when a hint is given but we don't know what exactly it is *)
   | Discard of int
   | Play of int
   with sexp
+  val (=): t -> t -> bool
 end
 
 (* This is syntactic sugar so that you can write:

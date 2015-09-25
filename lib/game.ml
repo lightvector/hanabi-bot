@@ -4,7 +4,7 @@ open Int.Replace_polymorphic_compare
 
 module Turn = struct
   type event =
-  | Hint of Hint.t
+  | Hint of Hint.t option (* None used in search when a hint is given but we don't know what exactly it is *)
   | Discard of int * Card_id.t (* int = hand idx *)
   | Play of int * Card_id.t * bool (* int = hand_idx, bool = was_playable *)
   | Draw of Card_id.t
@@ -146,7 +146,7 @@ module State = struct
 
   let card t card_id =     Map.find     t.known_cards card_id
   let card_exn t card_id = Map.find_exn t.known_cards card_id
-  let player_card_exn t player hand_idx = List.nth_exn t.hands.{player} hand_idx
+  let player_card_exn t pid hand_idx = List.nth_exn t.hands.{pid} hand_idx
 
   let is_playable t card =
     Number.(=) card.Card.number t.playable_numbers.{card.Card.color}
@@ -173,21 +173,23 @@ module State = struct
     in
     loop 0 list ~f
 
-  let is_legal_hint ?(allow_unknown_unhinted=false) t hint =
-    let { Hint. target; hint; hand_indices } = hint in
-    Player_id.is_legal target ~player_count:t.params.Params.player_count
-    && Player_id.(<>) target t.cur_player
-    && t.hints_left > 0
-    && not (Set.is_empty hand_indices)
-    && for_all_i t.hands.{target} ~f:(fun i card_id ->
-      match card t card_id with
-      | None ->
-        if not (Set.mem hand_indices i)
-          && allow_unknown_unhinted
-        then true
-        else failwith "hint of hand with unknown card"
-      | Some card ->  Bool.(=) (hint_matches_card t hint card) (Set.mem hand_indices i)
-    )
+  let is_legal_hint ?(allow_unknown_unhinted=false) ?(allow_unknown_hint=false) t hint =
+    match allow_unknown_hint, hint with
+    | false, None -> failwith "illegal unknown hint"
+    | true, None -> true
+    | _, Some { Hint.target; hint; hand_indices } ->
+      Player_id.is_legal target ~player_count:t.params.Params.player_count
+      && Player_id.(<>) target t.cur_player
+      && t.hints_left > 0
+      && not (Set.is_empty hand_indices)
+      && for_all_i t.hands.{target} ~f:(fun i card_id ->
+        match card t card_id with
+        | None ->
+          if not (Set.mem hand_indices i) && allow_unknown_unhinted
+          then true
+          else failwith "hint of hand with unknown card"
+        | Some card ->  Bool.(=) (hint_matches_card t hint card) (Set.mem hand_indices i)
+      )
 
   let matching_indices_exn t hint hand =
     List.filter_mapi hand ~f:(fun i card_id ->
@@ -205,13 +207,13 @@ module State = struct
       else None
     )
 
-  let all_legal_hints_exn t player =
-    let hand = t.hands.{player} in
-    all_legal_hints_of_hand_exn t hand ~target:player
+  let all_legal_hints_exn t pid =
+    let hand = t.hands.{pid} in
+    all_legal_hints_of_hand_exn t hand ~target:pid
 
-  let all_cards_in_hand_known t player =
-    let hand = t.hands.{player} in
-    List.for_all hand ~f:(fun id -> Map.mem t.known_cards id)
+  let all_cards_in_hand_known t pid =
+    let hand = t.hands.{pid} in
+    List.for_all hand ~f:(fun cid -> Map.mem t.known_cards cid)
 
   let maybe_matching_indices t hint hand =
     List.filter_mapi hand ~f:(fun i card_id ->
@@ -223,25 +225,25 @@ module State = struct
         else None
     ) |> Int.Set.of_list
 
-  let maybe_legal_hints t player =
-    let hand = t.hands.{player} in
+  let maybe_legal_hints t pid =
+    let hand = t.hands.{pid} in
     List.map t.params.Params.possible_hints ~f:(fun hint -> hint, maybe_matching_indices t hint hand)
     |> List.filter_map ~f:(fun (hint, matches) ->
       if not (Set.is_empty matches)
-      then Some { Hint.target = player; hint; hand_indices = matches }
+      then Some { Hint.target = pid; hint; hand_indices = matches }
       else None
     )
 
 
-  let is_definitely_legal ?allow_unknown_unhinted t action =
+  let is_definitely_legal ?allow_unknown_unhinted ?allow_unknown_hint t action =
     match action with
-    | Action.Hint hint -> is_legal_hint ?allow_unknown_unhinted t hint
+    | Action.Hint hint -> is_legal_hint ?allow_unknown_unhinted ?allow_unknown_hint t hint
     | Action.Discard i | Action.Play i ->
       0 <= i
       && i < List.length t.hands.{t.cur_player}
 
-  let turn_of_action_exn ?playable_if_unknown ?allow_unknown_unhinted t action  =
-    if not (is_definitely_legal ?allow_unknown_unhinted t action)
+  let turn_of_action_exn ?playable_if_unknown ?allow_unknown_unhinted ?allow_unknown_hint t action  =
+    if not (is_definitely_legal ?allow_unknown_unhinted ?allow_unknown_hint t action)
     then failwith (
       Sexp.to_string (Action.sexp_of_t action)
       ^ "\n"
@@ -380,8 +382,8 @@ module State = struct
       cur_player = Player_id.next t.cur_player ~player_count:t.params.Params.player_count;
     }
 
-  let eval_action_exn ?playable_if_unknown ?allow_unknown_unhinted t action =
-    let turn = turn_of_action_exn ?playable_if_unknown ?allow_unknown_unhinted t action in
+  let eval_action_exn ?playable_if_unknown ?allow_unknown_unhinted ?allow_unknown_hint t action =
+    let turn = turn_of_action_exn ?playable_if_unknown ?allow_unknown_unhinted ?allow_unknown_hint t action in
     eval_turn_exn t turn, turn
 
   let rec random_permutation l ~rand =
@@ -505,28 +507,28 @@ module State = struct
       then Card.to_ansicolor_string card
       else Card.to_string card
     in
-    let idstr id =
-      Option.value_map (card t id)
+    let idstr cid =
+      Option.value_map (card t cid)
         ~default:"?"
         ~f:cardstr
     in
-    let player_ids = Map.keys t.hands |> List.sort ~cmp:Player_id.compare in
+    let pids = Map.keys t.hands |> List.sort ~cmp:Player_id.compare in
     let hand_str =
-      List.map player_ids ~f:(fun id ->
-        let hand = t.hands.{id} in
+      List.map pids ~f:(fun pid ->
+        let hand = t.hands.{pid} in
         let hand_str = List.map hand ~f:idstr |> String.concat ~sep:"" in
         let to_play_str =
-          if Player_id.(=) id t.cur_player
+          if Player_id.(=) pid t.cur_player
           then "*"
           else " "
         in
-        sprintf "%sP%d: %s" to_play_str (Player_id.to_int id) hand_str
+        sprintf "%sP%d: %s" to_play_str (Player_id.to_int pid) hand_str
       )
       |> String.concat ~sep:" "
     in
     let played_str =
       List.map (Set.to_list t.params.Params.colors) ~f:(fun color ->
-        let cards = List.filter_map t.played_cards ~f:(fun id -> card t id) in
+        let cards = List.filter_map t.played_cards ~f:(fun cid -> card t cid) in
         let cards = List.filter cards ~f:(fun card -> Color.(=) card.Card.color color) in
         match List.reduce cards ~f:(fun x y ->
           if Number.(>) x.Card.number y.Card.number then x else y)
@@ -540,10 +542,10 @@ module State = struct
       |> String.concat ~sep:" "
     in
     let danger_str =
-      List.filter_map t.discarded_cards ~f:(fun id ->
-        if Option.exists (card t id) ~f:(fun card -> is_useless t card)
+      List.filter_map t.discarded_cards ~f:(fun cid ->
+        if Option.exists (card t cid) ~f:(fun card -> is_useless t card)
         then None
-        else Some id
+        else Some cid
       )
       |> List.sort ~cmp:(fun c0 c1 ->
         match card t c0, card t c1 with
@@ -577,19 +579,20 @@ module State = struct
       then Card.to_ansicolor_string card
       else Card.to_string card
     in
-    let idstr id =
-      Option.value_map (card t id)
+    let idstr cid =
+      Option.value_map (card t cid)
         ~default:"?"
         ~f:cardstr
     in
     sprintf "Player %d: " (Player_id.to_int turn.Turn.who)
     ^ String.concat ~sep:", " (List.map turn.Turn.events ~f:(fun event ->
       match event with
-      | Turn.Draw id -> "Draw " ^ idstr id
-      | Turn.Play (idx,id,true) -> sprintf "Play #%d %s" idx (idstr id)
-      | Turn.Play (idx,id,false) -> sprintf "Bomb #%d %s" idx (idstr id)
-      | Turn.Discard (idx,id)  -> sprintf "Discard #%d %s" idx (idstr id)
-      | Turn.Hint { Hint.target; hint; hand_indices } ->
+      | Turn.Draw cid -> "Draw " ^ idstr cid
+      | Turn.Play (idx,cid,true) -> sprintf "Play #%d %s" idx (idstr cid)
+      | Turn.Play (idx,cid,false) -> sprintf "Bomb #%d %s" idx (idstr cid)
+      | Turn.Discard (idx,cid)  -> sprintf "Discard #%d %s" idx (idstr cid)
+      | Turn.Hint None -> "Hint to unknown"
+      | Turn.Hint (Some { Hint.target; hint; hand_indices }) ->
         sprintf "Hint %s to P%d - %s - %s"
           (Sexp.to_string (Hint.sexp_of_hint hint))
           (Player_id.to_int target)
@@ -618,10 +621,10 @@ end
 
 let play params players ~seed ~f =
   assert (params.Params.player_count = List.length players);
-  let players =
+  let player_queue =
     List.mapi players ~f:(fun i (Player.Intf.T intf) ->
-      let player_id = Player_id.of_int i in
-      Player.T (player_id, intf.Player.Intf.create player_id ~params ~seed, intf))
+      let pid = Player_id.of_int i in
+      Player.T (pid, intf.Player.Intf.create pid ~params ~seed, intf))
     |> Queue.of_list
   in
   let state = State.create params ~seed in
@@ -629,29 +632,14 @@ let play params players ~seed ~f =
     if State.is_game_over state
     then state
     else
-      let player = Queue.dequeue_exn players in
-      let (Player.T (player_id, player_state, intf)) = player in
+      let player = Queue.dequeue_exn player_queue in
+      let (Player.T (pid, player_state, intf)) = player in
       let action =
-        intf.Player.Intf.act player_state (State.specialize state (View.Pid player_id))
+        intf.Player.Intf.act player_state (State.specialize state (View.Pid pid))
       in
       let new_state, turn = State.eval_action_exn state action in
-      Queue.enqueue players player;
+      Queue.enqueue player_queue player;
       f ~old:state new_state turn;
       loop new_state
   in
   loop state
-
-let _base_player () = assert false
-
-(* let () =
- *   let state =
- *     play (Params.standard ~player_count:2) ~seed:123
- *       [ Player.Intf.auto_player
- *       ; Player.Intf.auto_player ]
- *   in
- *   printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state)) *)
-(* module type Player = sig
- *   type t
- *   val update: t -> Action.t -> unit
- *   val act: t -> State.t -> Action.t
- * end *)
