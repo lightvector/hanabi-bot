@@ -648,8 +648,8 @@ let play params players ~seed ~pseed ~f =
     else
       let player = Queue.dequeue_exn player_queue in
       let (Player.T (pid, player_state, intf)) = player in
-      let old_state = State.specialize old_state (View.Pid pid) in
-      let action = intf.Player.Intf.act player_state old_state in
+      let specialized = State.specialize old_state (View.Pid pid) in
+      let action = intf.Player.Intf.act player_state specialized in
       let new_state, turn = State.eval_action_exn old_state action in
       Queue.enqueue player_queue player;
       report ~old_state ~new_state ~turn;
