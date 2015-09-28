@@ -69,8 +69,6 @@ end
    Capable of representing game states that are globally known, as well as game states
    as seen by one player (or seen by one player as envisioned by another), based on
    whether the [card] field in the various [Annotated_card.t] are Some or None. *)
-(* XCR stabony: should this contain Params.t?
-   lightvector: Sure. Why not? *)
 module State : sig
   type t =
     { params: Params.t
