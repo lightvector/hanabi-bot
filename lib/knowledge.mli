@@ -60,7 +60,7 @@ end
 type t
 with sexp_of
 
-val create: Game.Params.t -> t
+val empty: Game.Params.t -> t
 
 val view: t -> Player_id.t -> View.t
 val view2: t -> Player_id.t -> Player_id.t -> View.t
@@ -69,7 +69,7 @@ val card: t -> Player_id.t -> Card_id.t -> Of_card.t
 val card2: t -> Player_id.t -> Player_id.t -> Card_id.t -> Of_card.t
 
 (* Make changes to the global knowledge state, affecting all players at all metalevels *)
-val update: t -> old:Game.State.t -> Game.State.t -> Game.Turn.t -> t
+val update: t -> old_state:Game.State.t -> new_state:Game.State.t -> turn:Game.Turn.t -> t
 val reveal: t -> Card_id.t -> Card.t -> t
 val inform: t -> Card_id.t -> f:(Of_card.t -> Of_card.t) -> t
 val inform_cond: t -> Card_id.t -> Cond.t ->  t

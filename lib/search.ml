@@ -61,7 +61,7 @@ let act ~state ~knowledge ~belief ~action ~extra_hint_usefulness =
         state
         action
     in
-    let new_knowledge = Knowledge.update knowledge ~old:state new_state turn in
+    let new_knowledge = Knowledge.update knowledge ~old_state:state ~new_state ~turn in
     let new_belief =
       Belief.update belief ~old_state:state ~old_knowledge:knowledge
         ~new_state ~new_knowledge turn
@@ -84,7 +84,7 @@ let act ~state ~knowledge ~belief ~action ~extra_hint_usefulness =
           state
           action
       in
-      let new_knowledge = Knowledge.update knowledge ~old:state new_state turn in
+      let new_knowledge = Knowledge.update knowledge ~old_state:state ~new_state ~turn in
       let new_belief =
         Belief.update belief ~old_state:state ~old_knowledge:knowledge
           ~new_state ~new_knowledge turn

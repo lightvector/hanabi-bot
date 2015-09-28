@@ -83,46 +83,45 @@ let is_discardable card_state card =
 let _maybe_identify_card tags =
   assert false
 
-module State = struct
+module T = struct
   type t =
     { me : Player_id.t
-    ; tags : Tag.t list Card_id.Map.t
-    ; game_state : Game.State.t
+    ; mutable tags : Tag.t list Card_id.Map.t
     } with sexp
 end
 
-let was_hinted state card_id =
-  match Map.find state.State.tags card_id with
+let was_hinted t card_id =
+  match Map.find t.T.tags card_id with
   | None -> false
   | Some l -> List.exists l ~f:(fun tag ->
     match tag with
     | Tag.Hinted _ -> true
     | _ -> false)
 
-let update_state state turn =
+let update t ~old_state ~new_state ~turn =
   let { Game.Turn. who; events } = turn in
-  let { State. me; tags; game_state } = state in
+  let { T. me; tags } = t in
 
   let assign_tags_of_event tags event =
     match event with
     | Game.Turn.Draw _ | Game.Turn.Play _ -> tags
     | Game.Turn.Discard _ ->
       let couldve_hinted =
-        game_state.Game.State.hints_left > 0
+        old_state.Game.State.hints_left > 0
       in
       if not couldve_hinted
       then tags
       else
-        Map.fold game_state.Game.State.hands ~init:tags
+        Map.fold old_state.Game.State.hands ~init:tags
           ~f:(fun ~key:player_id ~data:card_ids tags ->
             if Player_id.(=) who player_id
             then tags
             else
-              let card_state = card_state_of_game_state game_state in
+              let card_state = card_state_of_game_state new_state in
               let front = List.hd_exn card_ids in
               let back = List.last_exn card_ids in
-              let unhinted_front = not (was_hinted state front) in
-              let unhinted_back = not (was_hinted state back) in
+              let unhinted_front = not (was_hinted t front) in
+              let unhinted_back = not (was_hinted t back) in
               let tags =
                 if unhinted_front
                 then
@@ -138,8 +137,8 @@ let update_state state turn =
     | Game.Turn.Hint None ->
       failwith "base player received unknown hint"
     | Game.Turn.Hint (Some { Hint. target; hint; hand_indices }) ->
-      let card_state = card_state_of_game_state game_state in
-      let hand = Map.find_exn game_state.Game.State.hands target in
+      let card_state = card_state_of_game_state new_state in
+      let hand = Map.find_exn old_state.Game.State.hands target in
       let tags,_ =
         List.foldi ~init:(tags,0) hand
           ~f:(fun hand_index (tags, hint_index) card_id ->
@@ -178,26 +177,12 @@ let update_state state turn =
       tags
   in
   let tags = List.fold ~init:tags events ~f:assign_tags_of_event in
-  let game_state = Game.State.eval_turn_exn game_state turn in
-  { State. me; tags; game_state }
+  t.T.tags <- tags
 
-let create player_id ~params ~seed =
-  { State. me = player_id
+let create player_id ~params:_ ~state:_ ~pseed:_ =
+  { T. me = player_id
   ; tags = Card_id.Map.empty
-  ; game_state = Game.State.create params ~seed}
-
-let find_new_history ~my_rev_history ~rev_history =
-  let prefix_length = List.length rev_history - List.length my_rev_history in
-  let rec loop i acc rev_history =
-    if i = 0
-    then acc
-    else
-      match rev_history with
-      | [] -> assert false
-      | turn :: rest ->
-        loop (i - 1) (turn :: acc) rest
-  in
-  loop prefix_length [] rev_history
+  }
 
 let first_some_from_other_players ~player_count ~me ~f =
   let rec loop player =
@@ -229,9 +214,9 @@ let tag_is_identified tag =
   | Tag.Identified _ -> true
   | _ -> false
 
-let find_hint_of_playable state game_state other_player =
+let find_hint_of_playable t game_state other_player =
   let card_state = card_state_of_game_state game_state in
-  let tags = state.State.tags in
+  let tags = t.T.tags in
   let hand_size = game_state.Game.State.params.Game.Params.hand_size in
   let hand = Map.find_exn game_state.Game.State.hands other_player in
   List.foldi hand ~init:None ~f:(fun hand_index hint_opt card_id ->
@@ -257,8 +242,8 @@ let find_hint_of_playable state game_state other_player =
           |> List.hd
   )
 
-let find_hint_of_danger state game_state other_player =
-  let tags = state.State.tags in
+let find_hint_of_danger t game_state other_player =
+  let tags = t.T.tags in
   let hand_size = game_state.Game.State.params.Game.Params.hand_size in
   let hand = Map.find_exn game_state.Game.State.hands other_player in
   let last_card_id = List.last_exn hand in
@@ -277,9 +262,9 @@ let find_hint_of_danger state game_state other_player =
         ~f:(fun hint -> Int.Set.min_elt_exn hint.Hint.hand_indices = hand_size - 1)
       |> List.hd
 
-let find_identified_play game_state state ~my_hand =
+let find_identified_play t game_state ~my_hand =
   let card_state = card_state_of_game_state game_state in
-  let { State. tags; _ } = state in
+  let { T. tags; _ } = t in
   List.foldi my_hand ~init:None ~f:(fun i play_opt card_id ->
     if Option.is_some play_opt
     then play_opt
@@ -305,9 +290,9 @@ let find_mapi list ~f =
   in
   loop 0 list
 
-let find_hinted_play game_state state ~my_hand =
+let find_hinted_play t game_state ~my_hand =
   let card_state = card_state_of_game_state game_state in
-  let { State. tags; _ } = state in
+  let { T. tags; _ } = t in
   let hand_size = game_state.Game.State.params.Game.Params.hand_size in
   find_mapi my_hand ~f:(fun i card_id ->
     match Map.find tags card_id with
@@ -366,23 +351,19 @@ let find_hinted_play game_state state ~my_hand =
 
 let (>>>) x y = Option.first_some x y
 
-let act state game_state =
+let act t game_state =
   let { Game.State. params; hints_left; known_cards; hands; rev_history; _ } =
     game_state
   in
   let { Game.Params. deck_params; player_count; hand_size; _ } = params in
-  let new_history = find_new_history ~my_rev_history:state.State.game_state.Game.State.rev_history
-    ~rev_history
-  in
-  let state = List.fold ~init:state new_history ~f:update_state in
-  let { State. tags; me; _ } = state in
+  let { T. tags; me; _ } = t in
   begin
     begin
       let hint_playable_opt =
         if hints_left = 0
         then None
         else first_some_from_other_players ~player_count ~me
-          ~f:(find_hint_of_playable state game_state)
+          ~f:(find_hint_of_playable t game_state)
       in
       Option.map hint_playable_opt ~f:(fun hint -> Action.Hint (Some hint))
     end
@@ -393,19 +374,19 @@ let act state game_state =
           then None
           else
             first_some_from_other_players ~player_count ~me
-              ~f:(find_hint_of_danger state game_state)
+              ~f:(find_hint_of_danger t game_state)
         in
         Option.map hint_dangerous_opt ~f:(fun hint -> Action.Hint (Some hint))
       end
     >>>
       let my_hand = Map.find_exn hands me in
       begin
-        find_identified_play game_state state ~my_hand
+        find_identified_play t game_state ~my_hand
         |> Option.map ~f:(fun index -> Action.Play index)
       end
     >>>
         begin
-          find_hinted_play game_state state ~my_hand
+          find_hinted_play t game_state ~my_hand
           |> Option.map ~f:(fun index -> Action.Play index)
         end
     >>>

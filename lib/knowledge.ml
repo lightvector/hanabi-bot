@@ -166,7 +166,7 @@ type t = {
 }
 with sexp_of
 
-let create params =
+let empty params =
   let deck = Deck_params.to_deck params.Params.deck_params in
   let base_per_card =
     List.map deck ~f:(fun card -> (card,()))
@@ -217,7 +217,7 @@ let map_all_views t ~f = {
   common = f t.common;
 }
 
-let update t ~old state turn =
+let update t ~old_state ~new_state ~turn =
   let reveal_if_able view state cid =
     match State.card state cid with
     | None -> view
@@ -232,25 +232,25 @@ let update t ~old state turn =
           if Player_id.(=) pid1 turn.Turn.who
             || Player_id.(=) pid2 turn.Turn.who
           then view
-          else reveal_if_able view state cid
+          else reveal_if_able view new_state cid
         ));
       common = t.common;
     }
     | Turn.Discard (_,cid) -> {
       viewss = Map.map t.viewss ~f:(fun views ->
         Map.map views ~f:(fun view ->
-          reveal_if_able view state cid
+          reveal_if_able view new_state cid
         ));
-      common = reveal_if_able t.common state cid;
+      common = reveal_if_able t.common new_state cid;
     }
     | Turn.Play (_,cid,playable) ->
       let update_view view =
-        match State.card state cid with
+        match State.card new_state cid with
         | None ->
           let cond =
             if playable
-            then Cond.playable old
-            else Cond.not (Cond.playable old)
+            then Cond.playable old_state
+            else Cond.not (Cond.playable old_state)
           in
           View.inform_cond view cid cond
         | Some card -> View.reveal view cid card
@@ -261,13 +261,13 @@ let update t ~old state turn =
       let cond =
         match hint with
         | Hint.Number n ->
-          Set.fold state.State.params.Params.rainbow_numbers
+          Set.fold new_state.State.params.Params.rainbow_numbers
             ~init:(Cond.number n) ~f:(fun cond n -> Cond.(||) cond (Cond.number n))
         | Hint.Color c ->
-          Set.fold state.State.params.Params.rainbow_colors
+          Set.fold new_state.State.params.Params.rainbow_colors
           ~init:(Cond.color c) ~f:(fun cond c -> Cond.(||) cond (Cond.color c))
       in
-      let hand = old.State.hands.{target} in
+      let hand = old_state.State.hands.{target} in
       let update_view view =
         List.foldi hand ~init:view ~f:(fun hidx view cid ->
           if Set.mem hand_indices hidx

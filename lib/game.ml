@@ -446,19 +446,23 @@ module State = struct
     in
     let rev_history = [] in
     let cur_player = Player_id.first in
-    let init =
-      { params; deck; bombs_left; hints_left; final_turns_left; num_played
-      ; played_cards; playable_numbers; handdeck_count; unknown_count; dead_cards
-      ; discarded_cards; hands; known_cards; rev_history
-      ; cur_player }
-    in
+    { params; deck; bombs_left; hints_left; final_turns_left; num_played
+    ; played_cards; playable_numbers; handdeck_count; unknown_count; dead_cards
+    ; discarded_cards; hands; known_cards; rev_history
+    ; cur_player }
+
+  let perform_initial_draw t ~f =
     let initial_turns =
-      List.init (hand_size * player_count) ~f:(fun i ->
-        { Turn. who = Player_id.of_int (i mod player_count)
+      List.init (t.params.Params.hand_size * t.params.Params.player_count) ~f:(fun i ->
+        { Turn. who = Player_id.of_int (i mod t.params.Params.player_count)
         ; events = [ Turn.Draw (Card_id.of_int i) ] }
       )
     in
-    List.fold initial_turns ~init ~f:eval_turn_exn
+    List.fold initial_turns ~init:t ~f:(fun old_state turn ->
+      let t = eval_turn_exn old_state turn in
+      f  ~old_state ~new_state:t ~turn;
+      t
+    )
 
   let reveal_exn t card_id card =
     if Map.mem t.known_cards card_id then failwith "reveal_exn revealing known card";
@@ -607,7 +611,8 @@ end
 module Player = struct
   module Intf = struct
     type 'a t =
-      { create : (Player_id.t -> params:Params.t -> seed:int -> 'a)
+      { create : (Player_id.t -> params:Params.t -> state:State.t -> pseed:int -> 'a)
+      ; update : ('a -> old_state:State.t -> new_state:State.t -> turn:Turn.t -> unit)
       ; act : ('a -> State.t -> Action.t)
       }
 
@@ -619,27 +624,36 @@ module Player = struct
   type wrapped = T:'a t -> wrapped
 end
 
-let play params players ~seed ~f =
+let play params players ~seed ~pseed ~f =
   assert (params.Params.player_count = List.length players);
+  let state = State.create params ~seed in
   let player_queue =
     List.mapi players ~f:(fun i (Player.Intf.T intf) ->
       let pid = Player_id.of_int i in
-      Player.T (pid, intf.Player.Intf.create pid ~params ~seed, intf))
+      let state = State.specialize state (View.Pid pid) in
+      Player.T (pid, intf.Player.Intf.create pid ~params ~state ~pseed, intf))
     |> Queue.of_list
   in
-  let state = State.create params ~seed in
-  let rec loop state =
-    if State.is_game_over state
-    then state
+  let report ~old_state ~new_state ~turn =
+    Queue.iter player_queue ~f:(fun (Player.T (pid, player_state, intf)) ->
+      let old_state = State.specialize old_state (View.Pid pid) in
+      let new_state = State.specialize new_state (View.Pid pid) in
+      intf.Player.Intf.update player_state ~old_state ~new_state ~turn;
+    )
+  in
+  let state = State.perform_initial_draw state ~f:report in
+  let rec loop old_state =
+    if State.is_game_over old_state
+    then old_state
     else
       let player = Queue.dequeue_exn player_queue in
       let (Player.T (pid, player_state, intf)) = player in
-      let action =
-        intf.Player.Intf.act player_state (State.specialize state (View.Pid pid))
-      in
-      let new_state, turn = State.eval_action_exn state action in
+      let old_state = State.specialize old_state (View.Pid pid) in
+      let action = intf.Player.Intf.act player_state old_state in
+      let new_state, turn = State.eval_action_exn old_state action in
       Queue.enqueue player_queue player;
-      f ~old:state new_state turn;
+      report ~old_state ~new_state ~turn;
+      f ~old_state ~new_state ~turn;
       loop new_state
   in
   loop state

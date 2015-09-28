@@ -139,9 +139,9 @@ end
 
 type t = Per_player.t View.Map.t with sexp_of
 
-let empty state =
+let empty params =
   let views =
-    Map.keys state.State.hands
+    Player_id.all ~player_count:params.Params.player_count
     |> List.map ~f:(fun pid -> View.Pid pid)
     |> fun l -> View.Common :: l
   in

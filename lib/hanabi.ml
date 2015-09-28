@@ -20,30 +20,16 @@ let sandbox_command =
     )
     (fun ~seed () ->
       let seed = seedvalue seed in
+      let pseed = 0 in
       printf "Seed: %d\n" seed;
+      printf "PSeed: %d\n" seed;
       let state =
-        Game.play (Params.standard ~player_count:2) ~seed ~f:(fun ~old:_ _state _turn -> ())
+        Game.play (Params.standard ~player_count:2) ~seed ~pseed
+          ~f:(fun ~old_state:_ ~new_state:_ ~turn:_ -> ())
           [ Players.base_player
           ; Players.base_player ]
       in
       printf "%s\n%!" (Sexp.to_string (Game.State.sexp_of_t state))
-
-(* let () =
- *   let state =
- *     State.create (Params.standard ~player_count:2)
- *     |> fun t -> State.eval_action_exn t (Action.Discard 2)
- *     |> fun (t, _) -> State.eval_action_exn t (Action.Play 4)
- *     |> fun (t, _) ->
- *       let target = Player_id.of_int 1 in
- *       let hint, hand_indices =
- *         List.hd_exn (State.all_legal_hints t (Map.find_exn t.State.hands target))
- *       in
- *       State.eval_action_exn t (Action.Hint { Hint. target; hint; hand_indices })
- *     |> fun (t, _) -> State.specialize t (Player_id.of_int 0)
- *   in
- *   printf "%s\n%!" (Sexp.to_string (State.sexp_of_t (fun _ -> Sexp.unit) state)) *)
-
-
     )
 ;;
 
@@ -75,7 +61,9 @@ let simulate_command =
     )
     (fun ~seed ~players ~num_games ~print_games ~use_ansi_colors () ->
       let seed = seedvalue seed in
+      let pseed = 0 in
       printf "Seed: %d\n" seed;
+      printf "PSeed: %d\n" seed;
       let player_queue =
         String.split players ~on:','
         |> List.map ~f:(fun name ->
@@ -104,12 +92,14 @@ let simulate_command =
 
         let players = List.map players ~f:snd in
         let seed = hash seed i in
-        let final_state = Game.play game_params ~seed players ~f:(fun ~old state turn ->
-          if print_games
-          then printf "%s  %s\n"
-            (State.display_string state ~use_ansi_colors)
-            (State.turn_display_string state turn ~use_ansi_colors);
-        )
+        let final_state =
+          Game.play game_params ~seed ~pseed players
+            ~f:(fun ~old_state:_ ~new_state ~turn ->
+              if print_games
+              then printf "%s  %s\n"
+                (State.display_string new_state ~use_ansi_colors)
+                (State.turn_display_string new_state turn ~use_ansi_colors);
+            )
         in
         if print_games
         then printf "%s\n%!" (State.display_string final_state ~use_ansi_colors);

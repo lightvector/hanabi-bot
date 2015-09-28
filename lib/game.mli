@@ -92,6 +92,7 @@ module State : sig
     } with sexp
 
   val create : Params.t -> seed:int -> t
+  val perform_initial_draw : t -> f:(old_state:t -> new_state:t -> turn:Turn.t -> unit) -> t
 
   (* State updating -------------------------------------------------- *)
 
@@ -153,10 +154,15 @@ end
 
 module Player : sig
   module Intf : sig
-    type 'a t =
-      { create : (Player_id.t -> params:Params.t -> seed:int -> 'a)
-      ; act : ('a -> State.t -> Action.t)
-      }
+    type 'a t = {
+      (* pseed = random seed if the player wants to act randomly
+         state = initial state *without* any cards drawn *)
+      create : (Player_id.t -> params:Params.t -> state:State.t -> pseed:int -> 'a);
+      (* called on every turn by any player, as well as for each initial card draw *)
+      update : ('a -> old_state:State.t -> new_state:State.t -> turn:Turn.t -> unit);
+      (* This will always be the most recent state given to [update] *)
+      act : ('a -> State.t -> Action.t);
+    }
 
     type wrapped = T:'a t -> wrapped
   end
@@ -170,5 +176,6 @@ val play :
   Params.t
   -> Player.Intf.wrapped list
   -> seed:int
-  -> f:(old:State.t -> State.t -> Turn.t -> unit)
+  -> pseed:int
+  -> f:(old_state:State.t -> new_state:State.t -> turn:Turn.t -> unit)
   -> State.t
