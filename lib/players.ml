@@ -14,8 +14,8 @@ let base_player =
   let act = Base_player.act in
   Player.Intf.T { Player.Intf.create; update; act }
 
-let search_player ~trace =
-  let create = Search_player.create ~trace in
+let search_player ~trace ~depth =
+  let create = Search_player.create ~trace ~depth in
   let update = Search_player.update in
   let act = Search_player.act in
   Player.Intf.T { Player.Intf.create; update; act }
@@ -23,5 +23,7 @@ let search_player ~trace =
 let all ~trace =
   ["always_play", always_play
   ;"base_player", base_player
-  ;"search_player", search_player ~trace
+  ;"search_player1", search_player ~trace ~depth:1
+  ;"search_player2", search_player ~trace ~depth:2
+  ;"search_player3", search_player ~trace ~depth:3
   ] |> String.Map.of_alist_exn

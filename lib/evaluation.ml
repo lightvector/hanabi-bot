@@ -70,7 +70,7 @@ let evaluate ~state ~knowledge ~belief ~extra_hint_usefulness ~main_player ~trac
           in
           if Belief.is_probably_playable belief main_player cid
           then 0.8 +. 0.2 *. prob
-          else 0.3 *. prob
+          else 0.2 *. prob
         end
     in
     (* let initial_deck_length =

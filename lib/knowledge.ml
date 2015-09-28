@@ -49,7 +49,7 @@ module Of_card = struct
     let sum = List.fold t ~init:0. ~f:(fun acc (c,x) -> if cond c then acc +. x else acc) in
     if Float.(<) total 1e-20
     then failwith "Total rounds to zero!"
-    else total /. sum
+    else sum /. total
 
   let add_evidence t cond ~likelihood =
     List.map t ~f:(fun ((c,x) as pair) -> if cond c then (c, x *. likelihood) else pair)

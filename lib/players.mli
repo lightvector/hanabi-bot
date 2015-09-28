@@ -11,4 +11,5 @@ val base_player: Game.Player.Intf.wrapped
 
 val search_player:
   trace: (int * [`Eval of Action.t | `Pred of Action.t] list option)
+  -> depth: int
   -> Game.Player.Intf.wrapped

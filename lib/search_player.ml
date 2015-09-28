@@ -11,10 +11,11 @@ type t = {
   mutable knowledge: Knowledge.t;
   mutable belief: Belief.t;
   pseed: int;
+  depth: int;
   trace: int * [`Eval of Action.t | `Pred of Action.t] list option
 }
 
-let create pid ~params ~state:_ ~pseed ~trace =
+let create pid ~params ~state:_ ~pseed ~trace ~depth =
   let knowledge = Knowledge.empty params in
   let belief = Belief.empty params in
   let search_params = {
@@ -22,7 +23,7 @@ let create pid ~params ~state:_ ~pseed ~trace =
     eval_action_exp_scale = 4.0;
   }
   in
-  { pid; params; search_params; knowledge; belief; pseed; trace }
+  { pid; params; search_params; knowledge; belief; pseed; depth; trace }
 
 let update t ~old_state ~new_state ~turn =
   let old_knowledge = t.knowledge in
@@ -37,7 +38,7 @@ let act t state =
     Search.search_predict
       ~params:t.search_params
       ~state
-      ~depth:1
+      ~depth:t.depth
       ~knowledge:t.knowledge
       ~belief:t.belief
       ~extra_hint_usefulness:0.

@@ -87,8 +87,9 @@ let simulate_command =
       let score_freqs = Array.create ~len:(max_score+1) 0 in
       let played_freqs = Array.create ~len:(max_score+1) 0 in
       for i = 0 to num_games - 1 do
+        let seed = hash seed i in
         if print_games
-        then printf "\nGame %d\n" i
+        then printf "\nGame %d (seed %d)\n" i seed
         else if i mod 100 = 0
         then printf "Game %d\n" i;
 
@@ -101,13 +102,12 @@ let simulate_command =
         end;
 
         let players = List.map players ~f:snd in
-        let seed = hash seed i in
         let final_state =
           Game.play game_params ~seed ~pseed players
-            ~f:(fun ~old_state:_ ~new_state ~turn ->
+            ~f:(fun ~old_state ~new_state ~turn ->
               if print_games
               then printf "%s  %s\n%!"
-                (State.display_string new_state ~use_ansi_colors)
+                (State.display_string old_state ~use_ansi_colors)
                 (State.turn_display_string new_state turn ~use_ansi_colors);
             )
         in

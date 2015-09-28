@@ -18,7 +18,7 @@ let all_actions ~state ~belief =
   let hand = state.State.hands.{state.State.cur_player} in
   let handlen = List.length hand in
   let plays = List.init handlen ~f:(fun i -> Action.Play i) in
-  let discards = List.init handlen ~f:(fun i -> Action.Discard i) in
+  let discards = List.init handlen ~f:(fun i -> Action.Discard i) |> List.rev in
 
   let all_players = Player_id.all ~player_count:state.State.params.Params.player_count in
   let prob_of_no_good_unknown_hint = ref 1. in
