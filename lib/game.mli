@@ -132,6 +132,7 @@ module State : sig
   (* Current game stats *)
   val score : t -> int
   val discards_left : t -> int (* discards left for perfect score *)
+  val turn_number : t -> int
 
   (* Higher-level card properties *)
   val is_playable : t -> Card.t -> bool

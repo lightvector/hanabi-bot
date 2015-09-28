@@ -11,9 +11,10 @@ type t = {
   mutable knowledge: Knowledge.t;
   mutable belief: Belief.t;
   pseed: int;
+  trace: int * [`Eval of Action.t | `Pred of Action.t] list option
 }
 
-let create pid ~params ~state:_ ~pseed =
+let create pid ~params ~state:_ ~pseed ~trace =
   let knowledge = Knowledge.empty params in
   let belief = Belief.empty params in
   let search_params = {
@@ -21,7 +22,7 @@ let create pid ~params ~state:_ ~pseed =
     eval_action_exp_scale = 4.0;
   }
   in
-  { pid; params; search_params; knowledge; belief; pseed }
+  { pid; params; search_params; knowledge; belief; pseed; trace }
 
 let update t ~old_state ~new_state ~turn =
   let old_knowledge = t.knowledge in
@@ -40,6 +41,7 @@ let act t state =
       ~knowledge:t.knowledge
       ~belief:t.belief
       ~extra_hint_usefulness:0.
+      ~trace:(if State.turn_number state = fst t.trace then snd t.trace else None)
     |> List.sort ~cmp:(fun (_a1,p1) (_a2,p2) -> Float.compare p2 p1)
   in
   let best_action = List.hd_exn action_probs |> fst in

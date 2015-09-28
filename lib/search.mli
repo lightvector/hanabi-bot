@@ -15,4 +15,5 @@ val search_predict:
   -> knowledge:Knowledge.t
   -> belief:Belief.t
   -> extra_hint_usefulness:float
+  -> trace:[`Eval of Action.t | `Pred of Action.t] list option
   -> (Action.t * float) list

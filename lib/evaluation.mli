@@ -9,4 +9,6 @@ val evaluate :
   -> knowledge:Knowledge.t
   -> belief:Belief.t
   -> extra_hint_usefulness:float
+  -> main_player:Player_id.t
+  -> trace:bool
   -> float

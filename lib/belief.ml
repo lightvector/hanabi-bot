@@ -164,4 +164,4 @@ let is_probably_playable t pid cid =
 
 (* CR lightvector for stabony: implement, maybe set it to something very simple to start *)
 let prob_of_good_hint t pid =
-  assert false
+  0.5

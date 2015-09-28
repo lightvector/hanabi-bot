@@ -17,5 +17,6 @@ val update :
 
 val descend : t -> Player_id.t -> t
 
+(* CR lightvector: Document what this does for a card not in that player's hand *)
 val is_probably_playable : t -> Player_id.t -> Card_id.t -> bool
 val prob_of_good_hint : t -> Player_id.t -> float

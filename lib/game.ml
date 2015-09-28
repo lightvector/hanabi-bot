@@ -504,6 +504,9 @@ module State = struct
   let discards_left t =
     t.params.Params.max_discards - List.length t.discarded_cards
 
+  let turn_number t =
+    List.length t.rev_history - t.params.Params.hand_size * t.params.Params.player_count
+
   (* MISC *)
   let display_string ?(use_ansi_colors=false) t =
     let cardstr card =
@@ -569,7 +572,7 @@ module State = struct
       |> String.concat
     in
     sprintf "T%3d HL %d BL %d DL %2d Played %s %s danger %s"
-      (List.length t.rev_history - t.params.Params.hand_size * t.params.Params.player_count)
+      (turn_number t)
       t.hints_left
       t.bombs_left
       (discards_left t)

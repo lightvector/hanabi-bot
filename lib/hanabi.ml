@@ -58,16 +58,26 @@ let simulate_command =
       +> flag "-print-games" no_arg ~doc:" Display the detailed events of each game"
       ++ step (fun k use_ansi_colors -> k ~use_ansi_colors)
       +> flag "-ansi-colors" no_arg ~doc:" Use ansi colors to display"
+      ++ step (fun k trace -> k ~trace)
+      +> flag "-trace" (optional string) ~doc:" Trace search"
     )
-    (fun ~seed ~players ~num_games ~print_games ~use_ansi_colors () ->
+    (fun ~seed ~players ~num_games ~print_games ~use_ansi_colors ~trace () ->
       let seed = seedvalue seed in
       let pseed = 0 in
       printf "Seed: %d\n" seed;
       printf "PSeed: %d\n" seed;
+      let trace =
+        match trace with
+        | None -> -1, None
+        | Some trace ->
+          <:of_sexp<(int * [`Eval of Action.t | `Pred of Action.t] list option)>>
+            (Sexp.of_string trace)
+      in
+      let all_players = Players.all ~trace in
       let player_queue =
         String.split players ~on:','
         |> List.map ~f:(fun name ->
-          match Map.find Players.all name with
+          match Map.find all_players name with
           | None -> failwithf "Could not find player with name %s" name ()
           | Some player -> (name,player))
         |> Queue.of_list
@@ -96,7 +106,7 @@ let simulate_command =
           Game.play game_params ~seed ~pseed players
             ~f:(fun ~old_state:_ ~new_state ~turn ->
               if print_games
-              then printf "%s  %s\n"
+              then printf "%s  %s\n%!"
                 (State.display_string new_state ~use_ansi_colors)
                 (State.turn_display_string new_state turn ~use_ansi_colors);
             )

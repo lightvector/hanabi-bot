@@ -111,6 +111,11 @@ module Hint = struct
     ; hand_indices: Int.Set.t
     }
   with sexp
+
+  let (=) x y =
+    Player_id.(=) x.target y.target
+    && Poly.(=) x.hint y.hint
+    && Set.equal x.hand_indices y.hand_indices
 end
 
 module Action = struct
@@ -120,7 +125,13 @@ module Action = struct
   | Play of int
   with sexp
 
-  let (=) = Poly.(=)
+  let (=) x y =
+    match x, y with
+    | Play x, Play y -> x = y
+    | Discard x, Discard y -> x = y
+    | Hint None, Hint None -> true
+    | Hint (Some x), Hint (Some y) -> Hint.(=) x y
+    | _ -> false
 end
 
 module Bigarray = struct

@@ -92,6 +92,8 @@ module Hint : sig
     ; hand_indices: Int.Set.t
     }
   with sexp
+
+  val (=): t -> t -> bool
 end
 
 module Action : sig

@@ -9,10 +9,6 @@ module Search_params = struct
   } with sexp
 end
 
-(* let logistic x ~scale =
- *   let x = x /. scale in
- *   1. /. (1. +. exp (-. x)) *)
-
 type all_actions = {
   actions: Action.t list;
   good_unknown_hint_prob: float;
@@ -91,10 +87,30 @@ let act ~state ~knowledge ~belief ~action ~extra_hint_usefulness =
       in
       (new_state, new_knowledge, new_belief, extra_hint_usefulness)
 
+let step_trace_pred trace action =
+  match trace with
+  | None -> None
+  | Some [] -> None
+  | Some (`Eval _ :: _) -> None
+  | Some (`Pred hd :: tl) ->
+    if Action.(=) action hd
+    then Some tl
+    else None
+
+let step_trace_eval trace action =
+  match trace with
+  | None -> None
+  | Some [] -> None
+  | Some (`Pred _ :: _) -> None
+  | Some (`Eval hd :: tl) ->
+    if Action.(=) action hd
+    then Some tl
+    else None
 
 (* Returns a distribution over possible actions that might be taken by the player-to-move
    from the given state with that player's knowledge and beliefs *)
-let rec search_predict ~params ~state ~depth ~knowledge ~belief ~extra_hint_usefulness =
+let rec search_predict ~params ~state ~depth ~knowledge ~belief
+    ~extra_hint_usefulness ~trace =
   if depth <= 0
   then failwith "search_predict called with depth <= 0"
   else begin
@@ -106,7 +122,13 @@ let rec search_predict ~params ~state ~depth ~knowledge ~belief ~extra_hint_usef
       let eval =
         search_evaluate ~params ~state ~depth:(depth-1)
           ~knowledge ~belief ~extra_hint_usefulness
+          ~main_player:state.State.cur_player
+          ~trace:(step_trace_pred trace action)
       in
+      begin match trace with
+      | Some [] -> printf "Eval: %f  Action: %s\n%!" eval (Sexp.to_string (Action.sexp_of_t action));
+      | _ -> ()
+      end;
       (action,eval)
     in
     let probs action_evals =
@@ -148,9 +170,23 @@ let rec search_predict ~params ~state ~depth ~knowledge ~belief ~extra_hint_usef
   end
 
 (* Returns the player's judgment of the goodness of the state and knowledge and beliefs *)
-and search_evaluate ~params ~state ~depth ~knowledge ~belief ~extra_hint_usefulness =
+and search_evaluate ~params ~state ~depth ~knowledge ~belief
+    ~extra_hint_usefulness ~main_player ~trace =
   if depth <= 0
-  then Evaluation.evaluate ~state ~knowledge ~belief ~extra_hint_usefulness
+  then begin
+    let trace =
+      match trace with
+      | Some [] -> true
+      | _ -> false
+    in
+    let eval =
+      Evaluation.evaluate ~state ~knowledge ~belief
+        ~extra_hint_usefulness ~main_player ~trace
+    in
+    if trace
+    then printf "Eval: %f\n%!" eval;
+    eval
+  end
   else begin
     (* Predict what the current player will do and take the weighted sum *)
     let action_probs =
@@ -158,7 +194,8 @@ and search_evaluate ~params ~state ~depth ~knowledge ~belief ~extra_hint_usefuln
       let state = State.specialize state (View.Pid pid) in
       let knowledge = Knowledge.descend knowledge (View.Pid pid) in
       let belief = Belief.descend belief pid in
-      search_predict ~params ~state ~depth ~knowledge ~belief ~extra_hint_usefulness
+      search_predict ~params ~state ~depth ~knowledge ~belief
+        ~extra_hint_usefulness ~trace
     in
     List.fold action_probs ~init:0. ~f:(fun sum (action,prob) ->
       let state, knowledge, belief, extra_hint_usefulness =
@@ -167,7 +204,12 @@ and search_evaluate ~params ~state ~depth ~knowledge ~belief ~extra_hint_usefuln
       let eval =
         search_evaluate ~params ~state ~depth:(depth-1)
           ~knowledge ~belief ~extra_hint_usefulness
+          ~main_player ~trace:(step_trace_eval trace action)
       in
+      begin match trace with
+      | Some [] -> printf "Eval: %f  Prob: %f  Action:%s \n%!" eval prob (Sexp.to_string (Action.sexp_of_t action));
+      | _ -> ()
+      end;
       sum +. prob *. eval
     )
   end
