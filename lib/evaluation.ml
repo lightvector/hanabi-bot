@@ -51,16 +51,18 @@ let evaluate ~state ~knowledge ~belief ~extra_hint_usefulness ~main_player ~trac
   if trace
   then printf "%s\n%!" (Sexp.to_string_hum (Game.State.sexp_of_t state));
 
-  if bombs_left = 0
-  then loss
-  else begin
+  begin
     let playability cid =
       match State.card state cid with
-      | Some card -> if State.is_playable state card then 1.0 else 0.0
+      | Some card ->
+        if State.is_playable state card then 1.0 else 0.0
       | None ->
-        if Knowledge.Of_card.definitely
-          (Knowledge.card knowledge main_player cid)
-          (Knowledge.Cond.playable state)
+        let definitely_playable =
+          Knowledge.Of_card.definitely
+            (Knowledge.card knowledge main_player cid)
+            (Knowledge.Cond.playable state)
+        in
+        if definitely_playable
         then 1.0
         else begin
           let prob =
@@ -73,11 +75,6 @@ let evaluate ~state ~knowledge ~belief ~extra_hint_usefulness ~main_player ~trac
           else 0.2 *. prob
         end
     in
-    (* let initial_deck_length =
-     *   List.length (Deck_params.to_deck deck_params)
-     *   - (player_count * hand_size)
-     * in
-     * let deck_length = List.length deck in *)
     (* CR stabony: Need to refine this for discounting multiple equal playables,
        and also for when we get hint future plays that aren't currently playable. *)
     let good_playable_count, bad_playable_count =
@@ -88,13 +85,18 @@ let evaluate ~state ~knowledge ~belief ~extra_hint_usefulness ~main_player ~trac
           then
             let playability = playability cid in
             (good +. playability, bad +. (1. -. playability))
-          else (good, bad)
+          else
+            (good, bad)
         ))
     in
     let good_played_count, bad_played_count =
       List.fold ~init:(0., 0.) played_cards ~f:(fun (good, bad) cid ->
-        let playability = playability cid in
-        (good +. playability, bad +. (1. -. playability))
+        match State.card state cid with
+        | Some card ->
+          (good +. 1., bad)
+        | None ->
+          let playability = playability cid in
+          (good +. playability, bad +. (1. -. playability))
       )
     in
     (* CR dwu: Need belief to tell us how likely these are to be dangers or kill us *)
@@ -106,9 +108,6 @@ let evaluate ~state ~knowledge ~belief ~extra_hint_usefulness ~main_player ~trac
       )
     in
 
-    (* let fraction_of_game_left =
-     *   (hints_left + deck_length) // (initial_hints + initial_deck_length)
-     * in *)
     if trace
     then printf "GBC: %f, BBC: %f\n%!" good_playable_count bad_playable_count;
     if trace
@@ -122,12 +121,14 @@ let evaluate ~state ~knowledge ~belief ~extra_hint_usefulness ~main_player ~trac
       float hints_left -. float initial_hints -. bad_playable_count -. bad_played_count
       -. float (List.length discarded_cards)
     in
-
+    let loss_score =
+      if not (State.perfect_score_possible state)
+      then -20.
+      else 0.
+    in
     if trace
     then printf "Score: %f, Hint score %f, ExtraHintUseful %f, UnknownDiscards %f\n%!"
       score hint_score extra_hint_usefulness unknown_discards;
 
-    logistic (score +. hint_score +. extra_hint_usefulness -. unknown_discards *. 0.5) ~scale:3.0
-    (* /. (1. -. fraction_of_game_left) *)
-    -. (float (Set.length dead_cards))
+    logistic (score +. hint_score +. extra_hint_usefulness -. unknown_discards *. 0.5 +. loss_score) ~scale:3.0
   end

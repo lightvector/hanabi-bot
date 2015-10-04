@@ -507,6 +507,12 @@ module State = struct
   let turn_number t =
     List.length t.rev_history - t.params.Params.hand_size * t.params.Params.player_count
 
+  let perfect_score_possible t =
+    t.bombs_left > 0
+    && (Set.length t.dead_cards = 0)
+    (* CR stabony: this isn't exactly right *)
+    && (discards_left t >= 0 || t.final_turns_left < t.params.Params.player_count)
+
   (* MISC *)
   let display_string ?(use_ansi_colors=false) t =
     let cardstr card =
